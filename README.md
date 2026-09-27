@@ -1,21 +1,43 @@
 # ReconForge
 
- [![Tests](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml). 
+[![Tests](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml)
 
-Payment reconciliation investigations with traceable evidence.
+**Evidence-grounded payment reconciliation with bounded AI investigation.**
 
-**Status: local synthetic prototype, 25 September 2026 (0.0.6).** Two synthetic
-settlement cases share a deterministic core, a typed case and evidence store,
-a read-only HTTP API, and four MCP tools. Investigation reports separate cited
-facts, unverified possibilities, unresolved questions, and human information
-requests. An optional model-assisted investigator selects evidence and orders
-that fixed playbook, with host-enforced checks. OpenAI and Anthropic provider adapters are implemented. Claude Sonnet 5 completed both bundled synthetic cases through the live Anthropic path under the same host contract; priority quality remains not evaluated. The earlier OpenAI live attempt stopped at HTTP 429 before an accepted run. Authentication, approvals, databases, and a web interface remain
-planned. ReconForge is a working name.
+ReconForge is an engineering prototype for investigating settlement discrepancies across internal ledger, payment-provider, and bank records.
 
-**Read an example investigation:** [missing invoice deduction](examples/reports/invoice_deduction.md)
-or [unexplained bank difference](examples/reports/bank_shortfall.md).
-Every reported amount is checked against captured source rows before the server
-returns the report. [Current verification scope and results](docs/INVESTIGATOR_VERIFICATION.md).
+The core design principle is simple: **financial truth stays deterministic; models remain bounded.**
+
+Financial calculations, evidence identity, case scope, and permissions are controlled by application code. An optional LLM can inspect permitted evidence and prioritize a fixed investigation playbook, but it cannot change verified amounts or execute financial actions.
+
+> **v0.0.6 · 122 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
+
+## Why ReconForge
+
+Many AI demos let the model calculate, infer, and act at the same time.
+
+ReconForge deliberately separates those responsibilities:
+
+- **Deterministic financial core** — authoritative amounts use integer EUR cents.
+- **Traceable evidence** — findings link to captured source rows and SHA-256-bound snapshots.
+- **Version-bound context** — evidence retrieval is tied to the exact case version.
+- **Read-only MCP tools** — current tools inspect data; they cannot mutate financial state.
+- **Bounded model execution** — the host controls case scope, tool access, evidence budgets, and final validation.
+- **Explicit failure handling** — invalid model proposals are rejected rather than silently accepted.
+- **Provider-independent model layer** — the same bounded investigator supports Claude, OpenAI, and an offline scripted driver.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["Ledger / Provider / Bank snapshots"] --> B["Deterministic reconciliation"]
+    B --> C["Versioned case + evidence"]
+    C --> D["Verified investigation report"]
+    D --> E["Bounded investigator host"]
+    C --> F["Read-only MCP tools"]
+    F --> E
+    G["Claude / OpenAI / scripted model"] <--> E
+    E --> H["Host-validated proposal"]
 
 ## Run the first example
 
