@@ -159,6 +159,45 @@ class InvestigatorRunnerTests(unittest.IsolatedAsyncioTestCase):
         for tool in tools:
             self.assertTrue(tool['strict']); check(tool['parameters'])
 
+    def test_provider_schema_binds_playbook_codes_to_selected_report(self):
+        bank_submit = {
+            tool['name']: tool for tool in function_tools(self.case, self.report)
+        }['submit_investigation']
+        bank_props = bank_submit['parameters']['properties']
+        self.assertEqual(
+            bank_props['hypothesis_order']['items']['enum'],
+            ['payout_timing_or_reporting', 'adjustment_or_data_error'],
+        )
+        self.assertEqual(
+            bank_props['question_order']['items']['enum'],
+            ['external_completeness', 'bank_difference_cause'],
+        )
+        self.assertEqual(
+            bank_props['next_step_order']['items']['enum'],
+            ['obtain_complete_reports', 'compare_payout_advice'],
+        )
+
+        invoice_case = self.store.get_case(CASE_ID)
+        invoice_report = get_investigation_report(
+            self.store, CASE_ID, invoice_case.case_version
+        )
+        invoice_submit = {
+            tool['name']: tool for tool in function_tools(invoice_case, invoice_report)
+        }['submit_investigation']
+        invoice_props = invoice_submit['parameters']['properties']
+        self.assertEqual(
+            invoice_props['hypothesis_order']['items']['enum'],
+            ['ledger_import_or_recording'],
+        )
+        self.assertEqual(
+            invoice_props['question_order']['items']['enum'],
+            ['external_completeness', 'ledger_difference_cause'],
+        )
+        self.assertEqual(
+            invoice_props['next_step_order']['items']['enum'],
+            ['obtain_complete_reports', 'inspect_ledger_records'],
+        )
+
 
 class InvestigatorMcpTests(unittest.IsolatedAsyncioTestCase):
     async def test_both_cases_complete_through_real_stdio_without_a_provider(self):
