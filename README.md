@@ -10,7 +10,7 @@ The core design principle is simple: **financial truth stays deterministic; mode
 
 Financial calculations, evidence identity, case scope, and permissions are controlled by application code. An optional LLM can inspect permitted evidence and prioritize a fixed investigation playbook, but it cannot change verified amounts or execute financial actions.
 
-> **v0.0.6 · 122 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
+> **v0.0.6 · 128 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
 
 ## Why ReconForge
 
@@ -105,7 +105,7 @@ python -m reconforge.mcp_demo
 python -m reconforge.mcp_demo --case-id case_bank_shortfall_001
 ```
 
-The 122-test suite includes the original 13 financial tests plus case, HTTP, MCP,
+The 128-test suite includes the original 13 financial tests plus case, HTTP, MCP,
 case-isolation, report, and investigator checks. Provider HTTP tests use a mock
 transport; CI needs no API key and makes no paid model calls. Each MCP demo launches a real
 stdio server subprocess, discovers its four tools, selects a case, and retrieves
@@ -193,6 +193,14 @@ The result records `contract_status: passed` and `priority_quality: not_evaluate
 Those are different claims. A plan can meet every structural rule and still have
 an unhelpful ordering. Model quality, usefulness, and resistance to adversarial
 source data require separate live evaluations.
+
+### Offline evaluation harness
+
+ReconForge includes an offline evaluator for accepted investigation runs:
+
+```bash
+python -m reconforge.evaluation_demo
+python -m reconforge.evaluation_demo --json
 
 ## What is implemented
 

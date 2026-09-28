@@ -6,7 +6,20 @@ The project follows semantic versioning while it remains in early development.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+
+### Added
+
+- Offline investigator evaluation harness.
+- Structured evaluation results for contract status, case context,
+  evidence coverage, extra evidence usage, and playbook-order agreement.
+- Human-readable and JSON evaluation demo.
+- Regression tests for evaluator behavior.
+
+### Notes
+
+- Reference-order agreement is descriptive and is not presented as a
+  model-quality score.
+- Evaluation requires no paid model API calls.
 
 ## [0.0.6] - 2026-09-28
 
