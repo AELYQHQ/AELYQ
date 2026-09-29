@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from reconforge.api import create_app
-from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID, CaseStore
 from reconforge.reports import VerifiedReport
 
 
@@ -15,7 +15,7 @@ class ReportApiTests(unittest.TestCase):
         self.addCleanup(self.client.close)
 
     def test_both_http_reports_return_exact_amounts_and_verification_scope(self):
-        for case_id, residuals in ((CASE_ID, [25000, 0]), (BANK_CASE_ID, [0, 15000])):
+        for case_id, residuals in ((CASE_ID, [25000, 0]), (BANK_CASE_ID, [0, 15000]), (TIMING_CASE_ID, [0, 1000000])):
             case = self.store.get_case(case_id)
             response = self.client.get(f"/cases/{case_id}/report", params={"case_version": case.case_version})
             with self.subTest(case_id=case_id):

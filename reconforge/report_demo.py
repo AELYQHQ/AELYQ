@@ -9,7 +9,7 @@ from pathlib import Path
 
 from mcp import Client, StdioServerParameters
 
-from .cases import BANK_CASE_ID, CASE_ID, ReconciliationCase
+from .cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID, ReconciliationCase
 from .reports import VerifiedReport, render_markdown
 
 
@@ -36,7 +36,7 @@ async def run_report_round_trip(case_id: str = CASE_ID) -> VerifiedReport:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case-id", choices=[CASE_ID, BANK_CASE_ID], default=CASE_ID)
+    parser.add_argument("--case-id", choices=[CASE_ID, BANK_CASE_ID, TIMING_CASE_ID], default=CASE_ID)
     parser.add_argument("--json", action="store_true", help="Print the structured report and verification result.")
     args = parser.parse_args()
     verified = asyncio.run(run_report_round_trip(args.case_id))

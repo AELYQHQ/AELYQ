@@ -18,7 +18,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), self.case.model_dump(mode="json"))
         listed = self.client.get("/cases").json()
-        self.assertEqual(len(listed["cases"]), 2)
+        self.assertEqual(len(listed["cases"]), 3)
         summary = next(item for item in listed["cases"] if item["case_id"] == CASE_ID)
         self.assertEqual(summary["case_version"], self.case.case_version)
 

@@ -3,7 +3,7 @@ import unittest
 from copy import deepcopy
 from unittest.mock import patch
 
-from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID, CaseStore
 from reconforge.investigation import InvestigationError, proposal_template, required_evidence, render_investigation
 from reconforge.investigator import (
     ModelReply, ScriptedModel, function_tools, investigate, parse_object, run_mcp_investigation,
@@ -202,7 +202,7 @@ class InvestigatorRunnerTests(unittest.IsolatedAsyncioTestCase):
 class InvestigatorMcpTests(unittest.IsolatedAsyncioTestCase):
     async def test_both_cases_complete_through_real_stdio_without_a_provider(self):
         with patch('reconforge.openai_model.OpenAIResponsesModel.complete', side_effect=AssertionError('No paid calls allowed')):
-            for case_id, turns, residuals in ((CASE_ID, 3, [25000, 0]), (BANK_CASE_ID, 2, [0, 15000])):
+            for case_id, turns, residuals in ((CASE_ID, 3, [25000, 0]), (BANK_CASE_ID, 2, [0, 15000]), (TIMING_CASE_ID, 2, [0, 1000000])):
                 with self.subTest(case_id=case_id):
                     run = await run_mcp_investigation(case_id)
                     self.assertEqual(run.model_turns, turns)

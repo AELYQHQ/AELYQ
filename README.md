@@ -10,7 +10,7 @@ The core design principle is simple: **financial truth stays deterministic; mode
 
 Financial calculations, evidence identity, case scope, and permissions are controlled by application code. An optional LLM can inspect permitted evidence and prioritize a fixed investigation playbook, but it cannot change verified amounts or execute financial actions.
 
-> **v0.0.6 · 128 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
+> **v0.0.6 · 132 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
 
 ## Why ReconForge
 
@@ -75,12 +75,13 @@ For another directory using the same strict demonstration schema:
 python3 -m reconforge.demo --data-dir examples/invoice_deduction --json
 ```
 
-## Compare two different discrepancies
+## Compare three different discrepancies
 
 | Case ID | Ledger minus provider | Provider minus bank | Interpretation |
 | --- | ---: | ---: | --- |
 | `case_invoice_deduction_001` | EUR 250.00 | EUR 0.00 | The supplied ledger omits an invoice deduction |
 | `case_bank_shortfall_001` | EUR 0.00 | EUR 150.00 | The bank payout is below the provider total; cause undetermined |
+| `case_settlement_timing_001` | EUR 0.00 | EUR 10,000.00 | A late-dated capture makes timing/reporting plausible, but the cause remains undetermined |
 
 The second case has matching ledger and provider components totalling EUR
 82,000.00, but a supplied bank payout of EUR 81,850.00. It requires review even
@@ -89,6 +90,20 @@ or justify a correcting entry. Run its financial comparison without dependencies
 
 ```bash
 python3 -m reconforge.demo --data-dir examples/bank_shortfall --json
+```
+
+### Settlement timing scenario
+
+The third bundled case has matching ledger and provider records totalling
+EUR 69,400.00 and a supplied bank payout of EUR 59,400.00. One EUR 10,000.00
+capture is timestamped after the supplied payout. ReconForge treats that as
+context for an unverified timing/reporting hypothesis, not as proof of cause:
+
+```bash
+python3 -m reconforge.demo --data-dir examples/settlement_timing --json
+python -m reconforge.report_demo --case-id case_settlement_timing_001
+python -m reconforge.investigator_demo --case-id case_settlement_timing_001
+python -m reconforge.evaluation_demo --case-id case_settlement_timing_001
 ```
 
 ## Run the API and MCP milestone
@@ -105,7 +120,7 @@ python -m reconforge.mcp_demo
 python -m reconforge.mcp_demo --case-id case_bank_shortfall_001
 ```
 
-The 128-test suite includes the original 13 financial tests plus case, HTTP, MCP,
+The 132-test suite includes the original 13 financial tests plus case, HTTP, MCP,
 case-isolation, report, and investigator checks. Provider HTTP tests use a mock
 transport; CI needs no API key and makes no paid model calls. Each MCP demo launches a real
 stdio server subprocess, discovers its four tools, selects a case, and retrieves
