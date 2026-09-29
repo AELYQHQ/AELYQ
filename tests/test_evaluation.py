@@ -2,7 +2,7 @@ import unittest
 from copy import deepcopy
 
 from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
-from reconforge.evaluation import evaluate_run
+from reconforge.evaluation import InvestigationEvaluation, evaluate_run, summarize_evaluations
 from reconforge.investigation import (
     InvestigationRun,
     proposal_template,
@@ -122,6 +122,44 @@ class InvestigationEvaluationTests(unittest.TestCase):
         self.assertTrue(result.question_order_matches_reference)
         self.assertTrue(result.next_step_order_matches_reference)
         self.assertEqual(result.quality_claim, "not_established")
+
+    def test_multi_run_summary_aggregates_only_descriptive_measurements(self):
+        evaluations = (
+            InvestigationEvaluation(
+                contract_passed=True,
+                case_context_matches=True,
+                required_evidence_coverage=1.0,
+                extra_evidence_count=0,
+                hypothesis_order_matches_reference=True,
+                question_order_matches_reference=True,
+                next_step_order_matches_reference=True,
+            ),
+            InvestigationEvaluation(
+                contract_passed=False,
+                case_context_matches=True,
+                required_evidence_coverage=0.5,
+                extra_evidence_count=2,
+                hypothesis_order_matches_reference=False,
+                question_order_matches_reference=True,
+                next_step_order_matches_reference=False,
+            ),
+        )
+
+        summary = summarize_evaluations(evaluations)
+
+        self.assertEqual(summary.run_count, 2)
+        self.assertEqual(summary.contract_pass_count, 1)
+        self.assertEqual(summary.case_context_match_count, 2)
+        self.assertEqual(summary.mean_required_evidence_coverage, 0.75)
+        self.assertEqual(summary.total_extra_evidence_count, 2)
+        self.assertEqual(summary.hypothesis_order_match_rate, 0.5)
+        self.assertEqual(summary.question_order_match_rate, 1.0)
+        self.assertEqual(summary.next_step_order_match_rate, 0.5)
+        self.assertEqual(summary.quality_claim, "not_established")
+
+    def test_multi_run_summary_rejects_empty_input(self):
+        with self.assertRaises(ValueError):
+            summarize_evaluations(())
 
 
 if __name__ == "__main__":
