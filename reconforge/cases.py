@@ -15,10 +15,16 @@ from .reconciliation import InputError, SOURCE_FILES, reconcile_snapshots
 
 CASE_ID = "case_invoice_deduction_001"
 BANK_CASE_ID = "case_bank_shortfall_001"
+TIMING_CASE_ID = "case_settlement_timing_001"
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 FIXTURE = EXAMPLES / "invoice_deduction"
 BANK_FIXTURE = EXAMPLES / "bank_shortfall"
-DEFAULT_FIXTURES = MappingProxyType({CASE_ID: FIXTURE, BANK_CASE_ID: BANK_FIXTURE})
+TIMING_FIXTURE = EXAMPLES / "settlement_timing"
+DEFAULT_FIXTURES = MappingProxyType({
+    CASE_ID: FIXTURE,
+    BANK_CASE_ID: BANK_FIXTURE,
+    TIMING_CASE_ID: TIMING_FIXTURE,
+})
 MAX_CASES = 32
 MAX_SOURCE_BYTES = 1_048_576
 MAX_SOURCE_RECORDS = 1000

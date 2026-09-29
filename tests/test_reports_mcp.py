@@ -2,14 +2,14 @@ import unittest
 
 from mcp import Client
 
-from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID, CaseStore
 from reconforge.mcp_server import create_server
 from reconforge.report_demo import run_report_round_trip
 
 
 class ReportMcpTests(unittest.IsolatedAsyncioTestCase):
     async def test_both_reports_cross_real_stdio_with_exact_amounts(self):
-        for case_id, residuals in ((CASE_ID, [25000, 0]), (BANK_CASE_ID, [0, 15000])):
+        for case_id, residuals in ((CASE_ID, [25000, 0]), (BANK_CASE_ID, [0, 15000]), (TIMING_CASE_ID, [0, 1000000])):
             with self.subTest(case_id=case_id):
                 verified = await run_report_round_trip(case_id)
                 self.assertEqual(verified.report.case_id, case_id)

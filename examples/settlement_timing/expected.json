@@ -1,0 +1,21 @@
+{
+  "currency": "EUR",
+  "totals_minor": {
+    "ledger": 6940000,
+    "provider": 6940000,
+    "bank": 5940000
+  },
+  "ledger_to_provider_residual_minor": 0,
+  "provider_to_bank_residual_minor": 1000000,
+  "ledger_to_provider_status": "balanced_on_supplied_events",
+  "provider_to_bank_status": "needs_review",
+  "event_difference_count": 0,
+  "late_event_id": "evt_capture_late_001",
+  "late_event_amount_minor": 1000000,
+  "late_event_effective_at": "2026-09-29T15:00:00Z",
+  "bank_event_id": "evt_bank_001",
+  "bank_amount_eur": "59400.00",
+  "bank_effective_at": "2026-09-29T12:00:00Z",
+  "review_required": true,
+  "external_completeness_verified": false
+}

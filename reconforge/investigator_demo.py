@@ -7,7 +7,7 @@ import os
 import sys
 
 from .anthropic_model import AnthropicMessagesModel
-from .cases import BANK_CASE_ID, CASE_ID
+from .cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID
 from .investigation import InvestigationError, render_investigation
 from .investigator import run_mcp_investigation
 from .openai_model import OpenAIResponsesModel
@@ -15,7 +15,7 @@ from .openai_model import OpenAIResponsesModel
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case-id", choices=[CASE_ID, BANK_CASE_ID], default=CASE_ID)
+    parser.add_argument("--case-id", choices=[CASE_ID, BANK_CASE_ID, TIMING_CASE_ID], default=CASE_ID)
     parser.add_argument("--live", action="store_true", help="Send synthetic case data to the selected paid model API.")
     parser.add_argument("--provider", choices=("openai", "anthropic"), help="Live provider; defaults to openai for compatibility.")
     parser.add_argument("--model", help="Explicit provider model ID; or set RECONFORGE_MODEL.")

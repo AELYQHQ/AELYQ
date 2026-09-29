@@ -9,6 +9,7 @@ The project follows semantic versioning while it remains in early development.
 
 ### Added
 
+- Third synthetic settlement-timing discrepancy scenario with end-to-end coverage.
 - Offline investigator evaluation harness.
 - Structured evaluation results for contract status, case context,
   evidence coverage, extra evidence usage, and playbook-order agreement.

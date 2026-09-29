@@ -1,0 +1,4 @@
+tenant_id,merchant_id,batch_id,event_id,event_type,amount_eur,currency,effective_at,description
+demo_tenant,demo_merchant,batch_20260929_003,evt_capture_early_001,Capture,60000.00,EUR,2026-09-29T09:00:00Z,Synthetic capture before supplied bank payout
+demo_tenant,demo_merchant,batch_20260929_003,evt_fee_001,Fee,-600.00,EUR,2026-09-29T10:00:00Z,Synthetic provider fee before supplied bank payout
+demo_tenant,demo_merchant,batch_20260929_003,evt_capture_late_001,Capture,10000.00,EUR,2026-09-29T15:00:00Z,Synthetic capture after supplied bank payout timestamp

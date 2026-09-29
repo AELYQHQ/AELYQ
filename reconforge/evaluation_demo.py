@@ -3,7 +3,7 @@
 import argparse
 import asyncio
 
-from .cases import BANK_CASE_ID, CASE_ID
+from .cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID
 from .evaluation import InvestigationEvaluation, evaluate_run
 from .investigation import InvestigationError
 from .investigator import run_mcp_investigation
@@ -41,7 +41,7 @@ async def evaluate_case(case_id: str) -> InvestigationEvaluation:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case-id", choices=[CASE_ID, BANK_CASE_ID], default=CASE_ID)
+    parser.add_argument("--case-id", choices=[CASE_ID, BANK_CASE_ID, TIMING_CASE_ID], default=CASE_ID)
     parser.add_argument("--json", action="store_true", help="Print structured evaluation JSON.")
     args = parser.parse_args()
 

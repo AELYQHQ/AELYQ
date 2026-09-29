@@ -2,7 +2,7 @@ import unittest
 
 from mcp import Client
 
-from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID, CaseStore
 from reconforge.mcp_demo import run_round_trip
 from reconforge.mcp_server import create_server
 
@@ -27,12 +27,12 @@ class McpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(evidence.reference.record_number, 1)
         self.assertEqual(evidence.case_id, BANK_CASE_ID)
 
-    async def test_list_cases_exposes_both_residuals_and_stable_order(self):
+    async def test_list_cases_exposes_all_residuals_and_stable_order(self):
         async with Client(create_server()) as client:
             result = await client.call_tool("list_cases", {})
             self.assertFalse(result.is_error)
             summaries = result.structured_content["cases"]
-            self.assertEqual([item["case_id"] for item in summaries], sorted([CASE_ID, BANK_CASE_ID]))
+            self.assertEqual([item["case_id"] for item in summaries], sorted([CASE_ID, BANK_CASE_ID, TIMING_CASE_ID]))
             bank = next(item for item in summaries if item["case_id"] == BANK_CASE_ID)
             self.assertEqual(bank["ledger_to_provider_residual_minor"], 0)
             self.assertEqual(bank["provider_to_bank_residual_minor"], 15000)

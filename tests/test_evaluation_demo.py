@@ -1,12 +1,12 @@
 import unittest
 
-from reconforge.cases import BANK_CASE_ID, CASE_ID
+from reconforge.cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID
 from reconforge.evaluation_demo import evaluate_case, render_evaluation
 
 
 class EvaluationDemoTests(unittest.IsolatedAsyncioTestCase):
     async def test_both_synthetic_cases_evaluate_offline_through_real_mcp(self):
-        for case_id in (CASE_ID, BANK_CASE_ID):
+        for case_id in (CASE_ID, BANK_CASE_ID, TIMING_CASE_ID):
             with self.subTest(case_id=case_id):
                 result = await evaluate_case(case_id)
                 self.assertTrue(result.contract_passed)

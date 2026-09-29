@@ -1,0 +1,2 @@
+tenant_id,merchant_id,batch_id,event_id,event_type,amount_eur,currency,effective_at,description
+demo_tenant,demo_merchant,batch_20260929_003,evt_bank_001,Payout,59400.00,EUR,2026-09-29T12:00:00Z,Synthetic supplied payout before late capture timestamp
