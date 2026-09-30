@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
@@ -12,12 +12,13 @@ from .cases import (
     ReconciliationCase, UnknownCaseError, UnknownEvidenceError,
 )
 from .reports import ReportLimitError, ReportValidationError, VerifiedReport, get_investigation_report
+from .operator_ui import render_operator_case, render_operator_index
 
 
 def create_app(store: CaseStore | None = None) -> FastAPI:
     store = store if store is not None else CaseStore()
     app = FastAPI(
-        title="ReconForge — synthetic case API", version=__version__,
+        title="AELYQ — synthetic case API", version=__version__,
         description="Read-only local demonstration. No authentication or financial actions.",
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
@@ -39,6 +40,26 @@ def create_app(store: CaseStore | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "mode": "synthetic_read_only", "version": __version__}
+
+    @app.get("/operator", response_class=HTMLResponse, include_in_schema=False)
+    def operator_index() -> HTMLResponse:
+        return HTMLResponse(
+            render_operator_index(store.list_cases()),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/operator/cases/{case_id}", response_class=HTMLResponse, include_in_schema=False)
+    def operator_case(case_id: CaseId) -> HTMLResponse:
+        case = store.get_case(case_id)
+        report = get_investigation_report(store, case_id, case.case_version)
+        evidence = tuple(
+            store.get_evidence(case_id, case.case_version, reference.evidence_id)
+            for reference in case.evidence
+        )
+        return HTMLResponse(
+            render_operator_case(case, report, evidence),
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/cases", response_model=CaseList)
     def list_cases() -> CaseList:
