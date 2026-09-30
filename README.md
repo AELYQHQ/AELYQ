@@ -1,22 +1,22 @@
-# ReconForge
+# AELYQ
 
 [![Tests](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml)
 
 **Evidence-grounded payment reconciliation with bounded AI investigation.**
 
-ReconForge is an engineering prototype for investigating settlement discrepancies across internal ledger, payment-provider, and bank records.
+AELYQ is an engineering prototype for investigating settlement discrepancies across internal ledger, payment-provider, and bank records.
 
 The core design principle is simple: **financial truth stays deterministic; models remain bounded.**
 
 Financial calculations, evidence identity, case scope, and permissions are controlled by application code. An optional LLM can inspect permitted evidence and prioritize a fixed investigation playbook, but it cannot change verified amounts or execute financial actions.
 
-> **v0.0.6 · 132 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
+> **main · 135 offline tests · FastAPI · 4 read-only MCP tools · Claude + OpenAI adapters**
 
-## Why ReconForge
+## Why AELYQ
 
 Many AI demos let the model calculate, infer, and act at the same time.
 
-ReconForge deliberately separates those responsibilities:
+AELYQ deliberately separates those responsibilities:
 
 - **Deterministic financial core** — authoritative amounts use integer EUR cents.
 - **Traceable evidence** — findings link to captured source rows and SHA-256-bound snapshots.
@@ -38,6 +38,9 @@ flowchart LR
     F --> E
     G["Claude / OpenAI / scripted model"] <--> E
     E --> H["Host-validated proposal"]
+```
+
+> **Naming note:** AELYQ is the public product name. The Python package and CLI module remain `reconforge` for compatibility during the rebrand.
 
 ## Run the first example
 
@@ -96,7 +99,7 @@ python3 -m reconforge.demo --data-dir examples/bank_shortfall --json
 
 The third bundled case has matching ledger and provider records totalling
 EUR 69,400.00 and a supplied bank payout of EUR 59,400.00. One EUR 10,000.00
-capture is timestamped after the supplied payout. ReconForge treats that as
+capture is timestamped after the supplied payout. AELYQ treats that as
 context for an unverified timing/reporting hypothesis, not as proof of cause:
 
 ```bash
@@ -120,7 +123,7 @@ python -m reconforge.mcp_demo
 python -m reconforge.mcp_demo --case-id case_bank_shortfall_001
 ```
 
-The 132-test suite includes the original 13 financial tests plus case, HTTP, MCP,
+The 135-test suite includes the original 13 financial tests plus case, HTTP, MCP,
 case-isolation, report, and investigator checks. Provider HTTP tests use a mock
 transport; CI needs no API key and makes no paid model calls. Each MCP demo launches a real
 stdio server subprocess, discovers its four tools, selects a case, and retrieves
@@ -211,7 +214,7 @@ source data require separate live evaluations.
 
 ### Offline evaluation harness
 
-ReconForge includes an offline evaluator for accepted investigation runs:
+AELYQ includes an offline evaluator for accepted investigation runs:
 
 ```bash
 python -m reconforge.evaluation_demo
