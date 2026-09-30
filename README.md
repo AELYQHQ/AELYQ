@@ -1,6 +1,6 @@
 # AELYQ
 
-[![Tests](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/SamanGharagozlou/reconforge/actions/workflows/tests.yml)
+[![Tests](https://github.com/AELYQHQ/aelyq/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/AELYQHQ/aelyq/actions/workflows/tests.yml)
 
 **Evidence-grounded payment reconciliation with bounded AI investigation.**
 
