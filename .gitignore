@@ -11,3 +11,6 @@ dist/
 build/
 *.egg-info/
 private-data/
+
+# Local AELYQ runtime artifacts
+.aelyq/

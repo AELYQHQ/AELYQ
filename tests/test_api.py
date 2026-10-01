@@ -1,5 +1,8 @@
+import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+from reconforge.investigation_store import InvestigationArtifactStore
 
 from fastapi.testclient import TestClient
 
@@ -11,8 +14,17 @@ from reconforge.investigation import InvestigationError
 class ApiTests(unittest.TestCase):
     def setUp(self):
         self.store = CaseStore()
-        self.client = TestClient(create_app(self.store), base_url="http://127.0.0.1")
+        self.artifact_directory = tempfile.TemporaryDirectory()
+        self.artifact_store = InvestigationArtifactStore(
+            Path(self.artifact_directory.name),
+            application_version="test-version",
+        )
+        self.client = TestClient(
+            create_app(self.store, artifact_store=self.artifact_store),
+            base_url="http://127.0.0.1",
+        )
         self.addCleanup(self.client.close)
+        self.addCleanup(self.artifact_directory.cleanup)
         self.case = self.store.get_case(CASE_ID)
 
     def test_http_case_matches_the_domain_object(self):
@@ -104,27 +116,89 @@ class ApiTests(unittest.TestCase):
             response.text,
         )
         self.assertIn("Run bounded investigation", response.text)
-    def test_operator_investigation_route_awaits_runner_and_renders_result(self):
+    def test_operator_investigation_persists_and_redirects_to_run(self):
         fake_run = object()
+        fake_artifact = MagicMock()
+        fake_artifact.run_id = "run_" + "a" * 32
 
         with (
             patch(
                 "reconforge.api.run_mcp_investigation",
                 new=AsyncMock(return_value=fake_run),
             ) as runner,
-            patch(
-                "reconforge.api.render_operator_investigation",
-                return_value="<html>investigation-result</html>",
-            ) as renderer,
+            patch.object(
+                self.artifact_store,
+                "save",
+                return_value=fake_artifact,
+            ) as saver,
         ):
             response = self.client.post(
-                f"/operator/cases/{CASE_ID}/investigate"
+                f"/operator/cases/{CASE_ID}/investigate",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(
+            response.headers["location"],
+            f"/operator/investigations/{fake_artifact.run_id}",
+        )
+        runner.assert_awaited_once_with(CASE_ID)
+        saver.assert_called_once_with(fake_run)
+
+    def test_operator_investigation_get_loads_and_renders_verified_artifact(self):
+        fake_artifact = MagicMock()
+        fake_artifact.run = object()
+
+        with (
+            patch.object(
+                self.artifact_store,
+                "get",
+                return_value=fake_artifact,
+            ) as loader,
+            patch(
+                "reconforge.api.render_operator_investigation",
+                return_value="<html>verified-investigation</html>",
+            ) as renderer,
+        ):
+            response = self.client.get(
+                "/operator/investigations/run_" + "b" * 32
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("investigation-result", response.text)
-        runner.assert_awaited_once_with(CASE_ID)
-        renderer.assert_called_once_with(fake_run)
+        self.assertIn("verified-investigation", response.text)
+        loader.assert_called_once_with("run_" + "b" * 32)
+        renderer.assert_called_once_with(
+            fake_artifact.run,
+            artifact=fake_artifact,
+        )
+
+    def test_operator_investigation_get_returns_404_for_missing_run(self):
+        response = self.client.get(
+            "/operator/investigations/run_" + "c" * 32
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("Investigation unavailable", response.text)
+        self.assertIn("Investigation run not found", response.text)
+
+
+    def test_operator_investigation_get_fails_closed_on_invalid_artifact(self):
+        run_id = "run_" + "d" * 32
+        path = Path(self.artifact_directory.name) / f"{run_id}.json"
+        path.write_text(
+            '{"not": "a valid investigation artifact"}',
+            encoding="utf-8",
+        )
+
+        response = self.client.get(
+            f"/operator/investigations/{run_id}"
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("Investigation unavailable", response.text)
+        self.assertIn("integrity", response.text.lower())
+
+
     def test_operator_investigation_error_is_rendered(self):
         with patch(
             "reconforge.api.run_mcp_investigation",

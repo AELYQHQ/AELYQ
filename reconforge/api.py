@@ -1,9 +1,10 @@
 """Local read-only HTTP interface to the same case store used by MCP."""
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
@@ -13,17 +14,27 @@ from .cases import (
 )
 from .reports import ReportLimitError, ReportValidationError, VerifiedReport, get_investigation_report
 from .investigation import InvestigationError
+from .investigation_store import InvestigationArtifactError, InvestigationArtifactStore
 from .investigator import run_mcp_investigation
 from .operator_ui import (
     render_operator_case,
     render_operator_error,
     render_operator_index,
     render_operator_investigation,
+    render_operator_investigation_error,
 )
 
 
-def create_app(store: CaseStore | None = None) -> FastAPI:
+def create_app(
+    store: CaseStore | None = None,
+    artifact_store: InvestigationArtifactStore | None = None,
+) -> FastAPI:
     store = store if store is not None else CaseStore()
+    artifact_store = (
+        artifact_store
+        if artifact_store is not None
+        else InvestigationArtifactStore(Path(".aelyq/investigation-runs"))
+    )
     app = FastAPI(
         title="AELYQ — synthetic case API", version=__version__,
         description="Read-only local demonstration. No authentication or financial actions.",
@@ -70,10 +81,9 @@ def create_app(store: CaseStore | None = None) -> FastAPI:
 
     @app.post(
         "/operator/cases/{case_id}/investigate",
-        response_class=HTMLResponse,
         include_in_schema=False,
     )
-    async def operator_investigate(case_id: CaseId) -> HTMLResponse:
+    async def operator_investigate(case_id: CaseId):
         case = store.get_case(case_id)
 
         try:
@@ -85,8 +95,42 @@ def create_app(store: CaseStore | None = None) -> FastAPI:
                 headers={"Cache-Control": "no-store"},
             )
 
+        try:
+            artifact = artifact_store.save(run)
+        except InvestigationArtifactError as exc:
+            return HTMLResponse(
+                render_operator_investigation_error(str(exc)),
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        return RedirectResponse(
+            url=f"/operator/investigations/{artifact.run_id}",
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get(
+        "/operator/investigations/{run_id}",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    def operator_investigation(run_id: str) -> HTMLResponse:
+        try:
+            artifact = artifact_store.get(run_id)
+        except InvestigationArtifactError as exc:
+            status_code = 404 if str(exc) == "Investigation run not found." else 500
+            return HTMLResponse(
+                render_operator_investigation_error(str(exc)),
+                status_code=status_code,
+                headers={"Cache-Control": "no-store"},
+            )
+
         return HTMLResponse(
-            render_operator_investigation(run),
+            render_operator_investigation(
+                artifact.run,
+                artifact=artifact,
+            ),
             headers={"Cache-Control": "no-store"},
         )
 

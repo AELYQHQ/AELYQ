@@ -4,6 +4,7 @@ from html import escape
 
 from .cases import CaseList, EvidenceRecord, ReconciliationCase
 from .investigation import InvestigationRun
+from .investigation_store import InvestigationArtifact
 from .money import format_eur
 from .reports import VerifiedReport
 
@@ -198,9 +199,24 @@ def render_operator_case(
 """
     return _page(case.case_id, body)
 
-def render_operator_investigation(run: InvestigationRun) -> str:
+def render_operator_investigation(
+    run: InvestigationRun,
+    *,
+    artifact: InvestigationArtifact | None = None,
+) -> str:
     report = run.report.report
     proposal = run.proposal
+
+    artifact_metadata = ""
+    if artifact is not None:
+        artifact_metadata = f"""
+<div class="meta">
+  <span>Run ID: <code>{_text(artifact.run_id)}</code></span>
+  <span>Created: <code>{_text(artifact.created_at.isoformat())}</code></span>
+  <span>Application: <code>{_text(artifact.application_version)}</code></span>
+  <span>Integrity: <strong>SHA-256 verified</strong></span>
+</div>
+"""
 
     findings = "".join(
         f"<li><code>{_text(item.finding_id)}</code> — {_text(item.statement)}</li>"
@@ -261,6 +277,7 @@ def render_operator_investigation(run: InvestigationRun) -> str:
 <p><a href="/operator/cases/{_text(proposal.case_id)}">← Back to case</a></p>
 
 <h1>Bounded investigation</h1>
+{artifact_metadata}
 
 <div class="meta">
   <span>Case: <code>{_text(proposal.case_id)}</code></span>
@@ -368,3 +385,25 @@ def render_operator_error(
 """
 
     return _page(f"{case.case_id} · Investigation stopped", body)
+def render_operator_investigation_error(message: str) -> str:
+    body = f"""
+<p><a href="/operator">← Back to cases</a></p>
+
+<h1>Investigation unavailable</h1>
+
+<div class="notice">
+  A persisted investigation artifact could not be loaded or verified.
+</div>
+
+<section>
+  <h2>Reason</h2>
+  <p>{_text(message)}</p>
+</section>
+
+<p class="tiny">
+  AELYQ will not display an investigation result unless its stored artifact
+  passes integrity verification.
+</p>
+"""
+
+    return _page("Investigation unavailable", body)
