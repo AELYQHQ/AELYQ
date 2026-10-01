@@ -1,9 +1,11 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
 from reconforge.api import create_app
 from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.investigation import InvestigationError
 
 
 class ApiTests(unittest.TestCase):
@@ -93,3 +95,47 @@ class ApiTests(unittest.TestCase):
         for path, operations in document["paths"].items():
             with self.subTest(path=path):
                 self.assertEqual(set(operations), {"get"})
+    def test_operator_case_contains_bounded_investigation_action(self):
+        response = self.client.get(f"/operator/cases/{CASE_ID}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            f'/operator/cases/{CASE_ID}/investigate',
+            response.text,
+        )
+        self.assertIn("Run bounded investigation", response.text)
+    def test_operator_investigation_route_awaits_runner_and_renders_result(self):
+        fake_run = object()
+
+        with (
+            patch(
+                "reconforge.api.run_mcp_investigation",
+                new=AsyncMock(return_value=fake_run),
+            ) as runner,
+            patch(
+                "reconforge.api.render_operator_investigation",
+                return_value="<html>investigation-result</html>",
+            ) as renderer,
+        ):
+            response = self.client.post(
+                f"/operator/cases/{CASE_ID}/investigate"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("investigation-result", response.text)
+        runner.assert_awaited_once_with(CASE_ID)
+        renderer.assert_called_once_with(fake_run)
+    def test_operator_investigation_error_is_rendered(self):
+        with patch(
+            "reconforge.api.run_mcp_investigation",
+            new=AsyncMock(
+                side_effect=InvestigationError("synthetic investigator failure")
+            ),
+        ):
+            response = self.client.post(
+                f"/operator/cases/{CASE_ID}/investigate"
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("Investigation stopped", response.text)
+        self.assertIn("synthetic investigator failure", response.text)

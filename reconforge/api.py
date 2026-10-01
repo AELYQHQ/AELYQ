@@ -12,7 +12,14 @@ from .cases import (
     ReconciliationCase, UnknownCaseError, UnknownEvidenceError,
 )
 from .reports import ReportLimitError, ReportValidationError, VerifiedReport, get_investigation_report
-from .operator_ui import render_operator_case, render_operator_index
+from .investigation import InvestigationError
+from .investigator import run_mcp_investigation
+from .operator_ui import (
+    render_operator_case,
+    render_operator_error,
+    render_operator_index,
+    render_operator_investigation,
+)
 
 
 def create_app(store: CaseStore | None = None) -> FastAPI:
@@ -58,6 +65,28 @@ def create_app(store: CaseStore | None = None) -> FastAPI:
         )
         return HTMLResponse(
             render_operator_case(case, report, evidence),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post(
+        "/operator/cases/{case_id}/investigate",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    async def operator_investigate(case_id: CaseId) -> HTMLResponse:
+        case = store.get_case(case_id)
+
+        try:
+            run = await run_mcp_investigation(case_id)
+        except InvestigationError as exc:
+            return HTMLResponse(
+                render_operator_error(case, str(exc)),
+                status_code=422,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        return HTMLResponse(
+            render_operator_investigation(run),
             headers={"Cache-Control": "no-store"},
         )
 

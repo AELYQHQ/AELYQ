@@ -3,6 +3,7 @@
 from html import escape
 
 from .cases import CaseList, EvidenceRecord, ReconciliationCase
+from .investigation import InvestigationRun
 from .money import format_eur
 from .reports import VerifiedReport
 
@@ -48,6 +49,9 @@ def _page(title: str, body: str) -> str:
     .table-wrap {{ overflow-x: auto; }}
     .meta {{ display: flex; flex-wrap: wrap; gap: 12px 20px; color: #9ba3af; font-size: 13px; margin-top: 8px; }}
     .notice {{ border-left: 3px solid #667eea; padding: 10px 14px; background: #111722; color: #c8d1df; margin: 22px 0; }}
+    .actions {{ display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 24px 0; }}
+    .action-button {{ border: 1px solid #46505d; border-radius: 10px; padding: 10px 14px; background: #161b22; color: #f4f5f7; font: inherit; font-weight: 700; cursor: pointer; }}
+    .action-button:hover {{ border-color: #7d8da8; background: #1b222c; }}
     .case-link {{ display: block; padding: 16px; border: 1px solid #252a31; border-radius: 12px; margin-top: 10px; background: #11151a; }}
     .case-link:hover {{ border-color: #46505d; text-decoration: none; }}
     .case-row {{ display: flex; justify-content: space-between; gap: 16px; align-items: center; }}
@@ -143,6 +147,13 @@ def render_operator_case(
   <span>Currency: {_text(facts.scope.currency)}</span>
 </div>
 
+<div class="actions">
+  <form method="post" action="/operator/cases/{_text(case.case_id)}/investigate">
+    <button class="action-button" type="submit">Run bounded investigation</button>
+  </form>
+  <span class="tiny">Provider-free scripted run · read-only · no financial actions</span>
+</div>
+
 <div class="grid">
   <div class="card"><div class="label">Ledger total</div><div class="value">{_text(format_eur(facts.totals_minor.ledger))}</div></div>
   <div class="card"><div class="label">Provider total</div><div class="value">{_text(format_eur(facts.totals_minor.provider))}</div></div>
@@ -186,3 +197,174 @@ def render_operator_case(
 <p class="tiny">Case version: <code>{_text(case.case_version)}</code><br>Report ID: <code>{_text(verified.report_id)}</code></p>
 """
     return _page(case.case_id, body)
+
+def render_operator_investigation(run: InvestigationRun) -> str:
+    report = run.report.report
+    proposal = run.proposal
+
+    findings = "".join(
+        f"<li><code>{_text(item.finding_id)}</code> — {_text(item.statement)}</li>"
+        for item in report.findings
+    )
+
+    hypotheses_by_code = {item.code: item for item in report.hypotheses}
+    hypotheses = "".join(
+        f"<li><strong>{_text(hypotheses_by_code[code].code)}</strong> — "
+        f"{_text(hypotheses_by_code[code].statement)}</li>"
+        for code in proposal.hypothesis_order
+    ) or "<li>None for the supplied records.</li>"
+
+    questions_by_code = {
+        item.code: item for item in report.unresolved_questions
+    }
+    questions = "".join(
+        f"<li><strong>{_text(questions_by_code[code].code)}</strong> — "
+        f"{_text(questions_by_code[code].question)}</li>"
+        for code in proposal.question_order
+    ) or "<li>None for the supplied records.</li>"
+
+    steps_by_code = {item.code: item for item in report.next_steps}
+    steps = "".join(
+        f"<li><strong>{_text(steps_by_code[code].code)}</strong> — "
+        f"{_text(steps_by_code[code].instruction)}</li>"
+        for code in proposal.next_step_order
+    ) or "<li>None for the supplied records.</li>"
+
+    evidence_ids = tuple(
+        dict.fromkeys(
+            step.evidence_id
+            for step in run.trace
+            if step.tool == "get_evidence" and step.evidence_id is not None
+        )
+    )
+    evidence = "".join(
+        f"<li><code>{_text(evidence_id)}</code></li>"
+        for evidence_id in evidence_ids
+    ) or "<li>No evidence rows were inspected.</li>"
+
+    trace = "".join(
+        f"<li>Turn {step.turn}: <code>{_text(step.tool)}</code>"
+        + (
+            f" — <code>{_text(step.evidence_id)}</code>"
+            if step.evidence_id
+            else ""
+        )
+        + "</li>"
+        for step in run.trace
+    ) or "<li>No execution steps recorded.</li>"
+
+    returned_models = ", ".join(
+        _text(model) for model in run.returned_models
+    ) or "None"
+
+    body = f"""
+<p><a href="/operator/cases/{_text(proposal.case_id)}">← Back to case</a></p>
+
+<h1>Bounded investigation</h1>
+
+<div class="meta">
+  <span>Case: <code>{_text(proposal.case_id)}</code></span>
+  <span>Mode: <code>{_text(run.mode)}</code></span>
+  <span>Contract: <strong>{_text(run.contract_status)}</strong></span>
+</div>
+
+<div class="notice">
+  Contract checks passed. Financial facts remain deterministic.
+  This investigation is read-only and does not authorize financial actions.
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="label">Model turns</div>
+    <div class="value">{run.model_turns}</div>
+  </div>
+  <div class="card">
+    <div class="label">Provider requests</div>
+    <div class="value">{run.provider_requests}</div>
+  </div>
+  <div class="card">
+    <div class="label">Evidence reads</div>
+    <div class="value">{len(evidence_ids)}</div>
+  </div>
+  <div class="card">
+    <div class="label">Priority quality</div>
+    <div class="value">{_text(run.priority_quality)}</div>
+  </div>
+</div>
+
+<section>
+  <h2>Verified financial findings</h2>
+  <ul>{findings}</ul>
+</section>
+
+<section>
+  <h2>Proposed investigation order</h2>
+
+  <h3>Possible explanations — unverified</h3>
+  <ul>{hypotheses}</ul>
+
+  <h3>Open questions</h3>
+  <ul>{questions}</ul>
+
+  <h3>Human next steps</h3>
+  <ul>{steps}</ul>
+</section>
+
+<section>
+  <h2>Evidence inspected</h2>
+  <ul>{evidence}</ul>
+</section>
+
+<section>
+  <h2>Execution trace</h2>
+  <ul>{trace}</ul>
+</section>
+
+<section>
+  <h2>Run metadata</h2>
+  <div class="meta">
+    <span>Requested model: <code>{_text(run.requested_model or "None")}</code></span>
+    <span>Returned models: <code>{returned_models}</code></span>
+    <span>Conclusion: <code>{_text(proposal.conclusion)}</code></span>
+  </div>
+</section>
+
+<div class="notice">
+  External completeness remains unverified.
+  No financial action is authorized.
+</div>
+
+<p class="tiny">
+  Case version: <code>{_text(proposal.case_version)}</code><br>
+  Report ID: <code>{_text(proposal.report_id)}</code>
+</p>
+"""
+
+    return _page(f"{proposal.case_id} · Investigation", body)
+
+
+def render_operator_error(
+    case: ReconciliationCase,
+    message: str,
+) -> str:
+    body = f"""
+<p><a href="/operator/cases/{_text(case.case_id)}">← Back to case</a></p>
+
+<h1>Investigation stopped</h1>
+
+<div class="notice">
+  The bounded investigation did not produce an accepted run.
+</div>
+
+<section>
+  <h2>Reason</h2>
+  <p>{_text(message)}</p>
+</section>
+
+<p class="tiny">
+  Case: <code>{_text(case.case_id)}</code><br>
+  Case version: <code>{_text(case.case_version)}</code>
+</p>
+"""
+
+    return _page(f"{case.case_id} · Investigation stopped", body)
