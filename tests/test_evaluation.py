@@ -1,8 +1,21 @@
 import unittest
 from copy import deepcopy
 
+
+from reconforge.evaluation import (
+    InvestigationEvaluation,
+    build_benchmark,
+    evaluate_repeatability,
+    evaluate_run,
+    summarize_evaluations,
+)
 from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
-from reconforge.evaluation import InvestigationEvaluation, evaluate_run, summarize_evaluations
+from reconforge.evaluation import (
+    InvestigationEvaluation,
+    build_benchmark,
+    evaluate_run,
+    summarize_evaluations,
+)
 from reconforge.investigation import (
     InvestigationRun,
     proposal_template,
@@ -10,6 +23,13 @@ from reconforge.investigation import (
     validate_proposal,
 )
 from reconforge.reports import get_investigation_report
+
+from reconforge.evaluation import (
+    InvestigationEvaluation,
+    build_benchmark,
+    evaluate_run,
+    summarize_evaluations,
+)
 
 
 class InvestigationEvaluationTests(unittest.TestCase):
@@ -160,6 +180,137 @@ class InvestigationEvaluationTests(unittest.TestCase):
     def test_multi_run_summary_rejects_empty_input(self):
         with self.assertRaises(ValueError):
             summarize_evaluations(())
+
+
+
+    def test_benchmark_preserves_case_identity_and_run_metadata(self):
+        run = self.accepted_run()
+
+        benchmark = build_benchmark((run,))
+
+        self.assertEqual(len(benchmark.evaluations), 1)
+
+        item = benchmark.evaluations[0]
+
+        self.assertEqual(item.case_id, self.case.case_id)
+        self.assertEqual(item.case_version, self.case.case_version)
+        self.assertEqual(item.mode, "scripted_offline")
+        self.assertIsNone(item.requested_model)
+
+        self.assertTrue(item.evaluation.contract_passed)
+        self.assertEqual(item.evaluation.required_evidence_coverage, 1.0)
+
+    def test_benchmark_summary_matches_its_individual_evaluations(self):
+        bank_run = self.accepted_run()
+
+        case = self.store.get_case(CASE_ID)
+        report = get_investigation_report(
+            self.store,
+            CASE_ID,
+            case.case_version,
+        )
+        inspected = {
+            evidence_id: self.store.get_evidence(
+                CASE_ID,
+                case.case_version,
+                evidence_id,
+            )
+            for evidence_id in required_evidence(report)
+        }
+        proposal = validate_proposal(
+            proposal_template(case, report),
+            case,
+            report,
+            inspected,
+        )
+        invoice_run = InvestigationRun(
+            mode="scripted_offline",
+            requested_model=None,
+            returned_models=(),
+            proposal=proposal,
+            report=report,
+            model_turns=2,
+            provider_requests=0,
+            input_tokens=None,
+            output_tokens=None,
+            trace=(),
+        )
+
+        benchmark = build_benchmark((bank_run, invoice_run))
+
+        self.assertEqual(benchmark.summary.run_count, 2)
+        self.assertEqual(
+            benchmark.summary.contract_pass_count,
+            sum(
+                item.evaluation.contract_passed
+                for item in benchmark.evaluations
+            ),
+        )
+        self.assertEqual(
+            benchmark.summary.mean_required_evidence_coverage,
+            sum(
+                item.evaluation.required_evidence_coverage
+                for item in benchmark.evaluations
+            ) / 2,
+        )
+        self.assertEqual(
+            benchmark.quality_claim,
+            "not_established",
+        )
+
+    def test_benchmark_rejects_empty_runs(self):
+        with self.assertRaises(ValueError):
+            build_benchmark(())
+
+
+    def test_repeatability_is_perfect_for_identical_runs(self):
+        run = self.accepted_run()
+
+        result = evaluate_repeatability((run, run))
+
+        self.assertEqual(result.run_count, 2)
+        self.assertEqual(result.contract_pass_count, 2)
+        self.assertEqual(result.case_context_match_count, 2)
+
+        self.assertEqual(result.distinct_evidence_selections, 1)
+        self.assertEqual(result.distinct_hypothesis_orders, 1)
+        self.assertEqual(result.distinct_question_orders, 1)
+        self.assertEqual(result.distinct_next_step_orders, 1)
+
+        self.assertEqual(result.evidence_selection_agreement, 1.0)
+        self.assertEqual(result.hypothesis_order_agreement, 1.0)
+        self.assertEqual(result.question_order_agreement, 1.0)
+        self.assertEqual(result.next_step_order_agreement, 1.0)
+
+        self.assertEqual(result.quality_claim, "not_established")
+
+    def test_repeatability_detects_different_valid_priority_orders(self):
+        first = self.accepted_run()
+
+        candidate = deepcopy(proposal_template(self.case, self.report))
+        candidate["hypothesis_order"].reverse()
+
+        second = self.accepted_run(candidate)
+
+        result = evaluate_repeatability((first, second))
+
+        self.assertEqual(result.run_count, 2)
+        self.assertEqual(result.contract_pass_count, 2)
+
+        self.assertEqual(result.distinct_evidence_selections, 1)
+        self.assertEqual(result.distinct_hypothesis_orders, 2)
+
+        self.assertEqual(result.evidence_selection_agreement, 1.0)
+        self.assertEqual(result.hypothesis_order_agreement, 0.5)
+
+        self.assertEqual(result.question_order_agreement, 1.0)
+        self.assertEqual(result.next_step_order_agreement, 1.0)
+
+    def test_repeatability_requires_at_least_two_runs(self):
+        run = self.accepted_run()
+
+        with self.assertRaises(ValueError):
+            evaluate_repeatability((run,))
 
 
 if __name__ == "__main__":
