@@ -100,6 +100,7 @@ def render_operator_case(
     case: ReconciliationCase,
     verified: VerifiedReport,
     evidence: tuple[EvidenceRecord, ...],
+    investigation_history: tuple[InvestigationArtifact, ...] = (),
 ) -> str:
     report = verified.report
     if report.case_id != case.case_id or report.case_version != case.case_version:
@@ -136,6 +137,17 @@ def render_operator_case(
 </tr>"""
         for item in evidence
     )
+
+    investigation_history_rows = "".join(
+        f"""<tr>
+  <td><code>{_text(item.run_id)}</code></td>
+  <td>{_text(item.created_at.isoformat())}</td>
+  <td><code>{_text(item.run.mode)}</code></td>
+  <td>{_text(item.run.contract_status)}</td>
+  <td><a href="/operator/investigations/{_text(item.run_id)}">View investigation</a></td>
+</tr>"""
+        for item in investigation_history
+    ) or '<tr><td colspan="5" class="subtle">No persisted investigations for this case.</td></tr>'
 
     facts = case.facts
     body = f"""
@@ -183,6 +195,16 @@ def render_operator_case(
 <section>
   <h2>Next checks</h2>
   <ul>{steps}</ul>
+</section>
+
+<section>
+  <h2>Investigation history</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Run ID</th><th>Created</th><th>Mode</th><th>Contract</th><th>Details</th></tr></thead>
+      <tbody>{investigation_history_rows}</tbody>
+    </table>
+  </div>
 </section>
 
 <section>

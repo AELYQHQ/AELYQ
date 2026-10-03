@@ -1,20 +1,21 @@
 """Local read-only HTTP interface to the same case store used by MCP."""
 
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .cases import (
     CaseId, CaseList, CaseStore, CaseVersionMismatch, EvidenceId, EvidenceRecord,
-    ReconciliationCase, UnknownCaseError, UnknownEvidenceError,
+    FrozenModel, ReconciliationCase, UnknownCaseError, UnknownEvidenceError,
 )
 from .reports import ReportLimitError, ReportValidationError, VerifiedReport, get_investigation_report
 from .investigation import InvestigationError
-from .investigation_store import InvestigationArtifactError, InvestigationArtifactStore
+from .investigation_store import InvestigationArtifactError, InvestigationArtifactStore, RunId
 from .investigator import run_mcp_investigation
 from .operator_ui import (
     render_operator_case,
@@ -23,6 +24,21 @@ from .operator_ui import (
     render_operator_investigation,
     render_operator_investigation_error,
 )
+
+
+class InvestigationHistoryItem(FrozenModel):
+    """Audit metadata for one persisted investigation run."""
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: RunId
+    created_at: datetime
+    application_version: str
+    run_sha256: str
+    case_id: CaseId
+    case_version: str
+    mode: Literal["scripted_offline", "openai_live", "anthropic_live"]
+    requested_model: str | None
+    contract_status: Literal["passed"]
 
 
 def create_app(
@@ -74,8 +90,24 @@ def create_app(
             store.get_evidence(case_id, case.case_version, reference.evidence_id)
             for reference in case.evidence
         )
+        try:
+            investigation_history = artifact_store.list_for_case(case_id)
+        except InvestigationArtifactError as exc:
+            return HTMLResponse(
+                render_operator_investigation_error(
+                    f"Investigation history unavailable: {exc}"
+                ),
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
+
         return HTMLResponse(
-            render_operator_case(case, report, evidence),
+            render_operator_case(
+                case,
+                report,
+                evidence,
+                investigation_history=investigation_history,
+            ),
             headers={"Cache-Control": "no-store"},
         )
 
@@ -141,6 +173,33 @@ def create_app(
     @app.get("/cases/{case_id}", response_model=ReconciliationCase)
     def get_case(case_id: CaseId) -> ReconciliationCase:
         return store.get_case(case_id)
+
+    @app.get(
+        "/cases/{case_id}/investigations",
+        response_model=list[InvestigationHistoryItem],
+    )
+    def list_investigations(case_id: CaseId) -> list[InvestigationHistoryItem]:
+        store.get_case(case_id)
+
+        try:
+            artifacts = artifact_store.list_for_case(case_id)
+        except InvestigationArtifactError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        return [
+            InvestigationHistoryItem(
+                run_id=artifact.run_id,
+                created_at=artifact.created_at,
+                application_version=artifact.application_version,
+                run_sha256=artifact.run_sha256,
+                case_id=artifact.run.proposal.case_id,
+                case_version=artifact.run.proposal.case_version,
+                mode=artifact.run.mode,
+                requested_model=artifact.run.requested_model,
+                contract_status=artifact.run.contract_status,
+            )
+            for artifact in artifacts
+        ]
 
     @app.get("/cases/{case_id}/report", response_model=VerifiedReport)
     def get_report(

@@ -189,3 +189,24 @@ class InvestigationArtifactStore:
             )
 
         return artifact
+
+    def list_for_case(self, case_id: str) -> tuple[InvestigationArtifact, ...]:
+        """Return verified investigation artifacts for one case, newest first.
+
+        Every matching artifact is loaded through get(), so history never
+        bypasses the store's existing validation and integrity checks.
+        """
+        artifacts: list[InvestigationArtifact] = []
+
+        for artifact_path in self.directory.glob("run_*.json"):
+            artifact = self.get(artifact_path.stem)
+            if artifact.run.proposal.case_id == case_id:
+                artifacts.append(artifact)
+
+        return tuple(
+            sorted(
+                artifacts,
+                key=lambda artifact: (artifact.created_at, artifact.run_id),
+                reverse=True,
+            )
+        )
