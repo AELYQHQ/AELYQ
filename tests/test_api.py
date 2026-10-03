@@ -1,5 +1,7 @@
+import asyncio
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from reconforge.investigation_store import InvestigationArtifactStore
@@ -9,6 +11,7 @@ from fastapi.testclient import TestClient
 from reconforge.api import create_app
 from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
 from reconforge.investigation import InvestigationError
+from reconforge.investigator import run_mcp_investigation
 
 
 class ApiTests(unittest.TestCase):
@@ -92,6 +95,77 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_investigation_history_returns_verified_metadata_newest_first(self):
+        run = asyncio.run(run_mcp_investigation(BANK_CASE_ID))
+
+        first = self.artifact_store.save(
+            run,
+            run_id="run_" + "a" * 32,
+            created_at=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc),
+        )
+        second = self.artifact_store.save(
+            run,
+            run_id="run_" + "b" * 32,
+            created_at=datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc),
+        )
+
+        response = self.client.get(
+            f"/cases/{BANK_CASE_ID}/investigations"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(
+            [item["run_id"] for item in payload],
+            [second.run_id, first.run_id],
+        )
+        self.assertEqual(payload[0]["case_id"], BANK_CASE_ID)
+        self.assertEqual(
+            payload[0]["case_version"],
+            run.proposal.case_version,
+        )
+        self.assertEqual(payload[0]["application_version"], "test-version")
+        self.assertEqual(payload[0]["mode"], run.mode)
+        self.assertEqual(
+            payload[0]["requested_model"],
+            run.requested_model,
+        )
+        self.assertEqual(payload[0]["contract_status"], "passed")
+        self.assertEqual(
+            payload[0]["run_sha256"],
+            second.run_sha256,
+        )
+
+    def test_investigation_history_returns_404_for_unknown_case(self):
+        response = self.client.get(
+            "/cases/unknown/investigations"
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.json()["detail"],
+            "Unknown case ID.",
+        )
+
+    def test_investigation_history_fails_closed_on_invalid_artifact(self):
+        run_id = "run_" + "c" * 32
+        path = Path(self.artifact_directory.name) / f"{run_id}.json"
+        path.write_text(
+            '{"not": "a valid investigation artifact"}',
+            encoding="utf-8",
+        )
+
+        response = self.client.get(
+            f"/cases/{BANK_CASE_ID}/investigations"
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn(
+            "investigation artifact",
+            response.json()["detail"].lower(),
+        )
+
     def test_financial_mutations_are_not_exposed(self):
         for method in ["POST", "PUT", "PATCH", "DELETE"]:
             with self.subTest(method=method):
@@ -116,6 +190,26 @@ class ApiTests(unittest.TestCase):
             response.text,
         )
         self.assertIn("Run bounded investigation", response.text)
+    def test_operator_case_shows_persisted_investigation_history(self):
+        run = asyncio.run(run_mcp_investigation(BANK_CASE_ID))
+        artifact = self.artifact_store.save(
+            run,
+            run_id="run_" + "e" * 32,
+            created_at=datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc),
+        )
+
+        response = self.client.get(f"/operator/cases/{BANK_CASE_ID}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Investigation history", response.text)
+        self.assertIn(artifact.run_id, response.text)
+        self.assertIn(
+            f"/operator/investigations/{artifact.run_id}",
+            response.text,
+        )
+        self.assertIn("scripted_offline", response.text)
+        self.assertIn("View investigation", response.text)
+
     def test_operator_investigation_persists_and_redirects_to_run(self):
         fake_run = object()
         fake_artifact = MagicMock()

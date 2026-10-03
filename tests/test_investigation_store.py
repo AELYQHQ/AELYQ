@@ -244,5 +244,75 @@ class InvestigationArtifactStoreTests(unittest.TestCase):
                 )
 
 
+    def test_list_for_case_returns_verified_runs_newest_first(self):
+        import tempfile
+        from datetime import datetime, timezone
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.make_store(Path(directory))
+
+            first = store.save(
+                self.run,
+                run_id="run_" + "a" * 32,
+                created_at=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc),
+            )
+            second = store.save(
+                self.run,
+                run_id="run_" + "b" * 32,
+                created_at=datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc),
+            )
+
+            history = store.list_for_case(self.run.proposal.case_id)
+
+            self.assertEqual(
+                tuple(artifact.run_id for artifact in history),
+                (second.run_id, first.run_id),
+            )
+
+    def test_list_for_case_excludes_other_cases(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.make_store(Path(directory))
+
+            store.save(
+                self.run,
+                run_id="run_" + "a" * 32,
+            )
+
+            self.assertEqual(
+                store.list_for_case("case_invoice_deduction_001"),
+                (),
+            )
+
+    def test_list_for_case_fails_closed_on_tampered_artifact(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.make_store(Path(directory))
+
+            saved = store.save(
+                self.run,
+                run_id="run_" + "a" * 32,
+            )
+
+            artifact_path = Path(directory) / f"{saved.run_id}.json"
+            payload = json.loads(
+                artifact_path.read_text(encoding="utf-8")
+            )
+            payload["run_sha256"] = "0" * 64
+            artifact_path.write_text(
+                json.dumps(payload, sort_keys=True),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                InvestigationArtifactError,
+                "SHA-256 integrity verification",
+            ):
+                store.list_for_case(self.run.proposal.case_id)
+
+
 if __name__ == "__main__":
     unittest.main()
