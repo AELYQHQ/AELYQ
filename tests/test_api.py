@@ -1,3 +1,4 @@
+import json
 import asyncio
 import tempfile
 import unittest
@@ -5,11 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from reconforge.investigation_store import InvestigationArtifactStore
+from reconforge.evaluation_store import EvaluationArtifactStore
 
 from fastapi.testclient import TestClient
 
 from reconforge.api import create_app
 from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.evaluation import InvestigationRepeatability
 from reconforge.investigation import InvestigationError
 from reconforge.investigator import run_mcp_investigation
 
@@ -22,13 +25,43 @@ class ApiTests(unittest.TestCase):
             Path(self.artifact_directory.name),
             application_version="test-version",
         )
+        self.evaluation_directory = tempfile.TemporaryDirectory()
+        self.evaluation_store = EvaluationArtifactStore(
+            Path(self.evaluation_directory.name),
+            application_version="test-version",
+        )
         self.client = TestClient(
-            create_app(self.store, artifact_store=self.artifact_store),
+            create_app(
+                self.store,
+                artifact_store=self.artifact_store,
+                evaluation_store=self.evaluation_store,
+            ),
             base_url="http://127.0.0.1",
         )
         self.addCleanup(self.client.close)
         self.addCleanup(self.artifact_directory.cleanup)
+        self.addCleanup(self.evaluation_directory.cleanup)
         self.case = self.store.get_case(CASE_ID)
+
+    def make_repeatability(self, case_id: str) -> InvestigationRepeatability:
+        case = self.store.get_case(case_id)
+        return InvestigationRepeatability(
+            case_id=case.case_id,
+            case_version=case.case_version,
+            mode="scripted_offline",
+            requested_model=None,
+            run_count=2,
+            contract_pass_count=2,
+            case_context_match_count=2,
+            distinct_evidence_selections=1,
+            distinct_hypothesis_orders=1,
+            distinct_question_orders=1,
+            distinct_next_step_orders=1,
+            evidence_selection_agreement=1.0,
+            hypothesis_order_agreement=1.0,
+            question_order_agreement=1.0,
+            next_step_order_agreement=1.0,
+        )
 
     def test_http_case_matches_the_domain_object(self):
         response = self.client.get(f"/cases/{CASE_ID}")
@@ -163,6 +196,105 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertIn(
             "investigation artifact",
+            response.json()["detail"].lower(),
+        )
+
+    def test_evaluation_history_lists_all_and_filters_by_case(self):
+        invoice = self.evaluation_store.save(
+            self.make_repeatability(CASE_ID)
+        )
+        bank = self.evaluation_store.save(
+            self.make_repeatability(BANK_CASE_ID)
+        )
+
+        response = self.client.get("/evaluations")
+
+        self.assertEqual(response.status_code, 200)
+        listed = response.json()
+        self.assertEqual(len(listed), 2)
+        self.assertEqual(
+            {item["evaluation_id"] for item in listed},
+            {invoice.evaluation_id, bank.evaluation_id},
+        )
+
+        response = self.client.get(
+            f"/cases/{CASE_ID}/evaluations"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        case_history = response.json()
+        self.assertEqual(len(case_history), 1)
+        self.assertEqual(
+            case_history[0]["evaluation_id"],
+            invoice.evaluation_id,
+        )
+        self.assertEqual(
+            case_history[0]["case_ids"],
+            [CASE_ID],
+        )
+
+    def test_evaluation_detail_returns_verified_artifact(self):
+        artifact = self.evaluation_store.save(
+            self.make_repeatability(BANK_CASE_ID)
+        )
+
+        response = self.client.get(
+            f"/evaluations/{artifact.evaluation_id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["evaluation_id"],
+            artifact.evaluation_id,
+        )
+        self.assertEqual(
+            payload["artifact_type"],
+            "repeatability",
+        )
+        self.assertEqual(
+            payload["result_sha256"],
+            artifact.result_sha256,
+        )
+        self.assertEqual(
+            payload["result"]["case_id"],
+            BANK_CASE_ID,
+        )
+
+    def test_missing_evaluation_returns_404(self):
+        response = self.client.get(
+            "/evaluations/" + "evaluation_" + "a" * 32
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn(
+            "Evaluation artifact not found",
+            response.json()["detail"],
+        )
+
+    def test_tampered_evaluation_fails_closed(self):
+        artifact = self.evaluation_store.save(
+            self.make_repeatability(BANK_CASE_ID)
+        )
+
+        path = (
+            Path(self.evaluation_directory.name)
+            / f"{artifact.evaluation_id}.json"
+        )
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["result_sha256"] = "0" * 64
+        path.write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+        )
+
+        response = self.client.get(
+            f"/evaluations/{artifact.evaluation_id}"
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn(
+            "integrity",
             response.json()["detail"].lower(),
         )
 

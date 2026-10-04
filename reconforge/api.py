@@ -16,6 +16,7 @@ from .cases import (
 from .reports import ReportLimitError, ReportValidationError, VerifiedReport, get_investigation_report
 from .investigation import InvestigationError
 from .investigation_store import InvestigationArtifactError, InvestigationArtifactStore, RunId
+from .evaluation_store import EvaluationArtifact, EvaluationArtifactError, EvaluationArtifactStore
 from .investigator import run_mcp_investigation
 from .operator_ui import (
     render_operator_case,
@@ -41,15 +42,60 @@ class InvestigationHistoryItem(FrozenModel):
     contract_status: Literal["passed"]
 
 
+class EvaluationHistoryItem(FrozenModel):
+    """Audit metadata for one persisted evaluation artifact."""
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    evaluation_id: str
+    created_at: datetime
+    application_version: str
+    artifact_type: Literal["benchmark", "repeatability"]
+    result_sha256: str
+    case_ids: tuple[CaseId, ...]
+
+
+def _evaluation_case_ids(
+    artifact: EvaluationArtifact,
+) -> tuple[CaseId, ...]:
+    """Return the distinct case IDs represented by one verified artifact."""
+    if artifact.artifact_type == "benchmark":
+        return tuple(
+            dict.fromkeys(
+                item.case_id
+                for item in artifact.result.evaluations
+            )
+        )
+    return (artifact.result.case_id,)
+
+
+def _evaluation_history_item(
+    artifact: EvaluationArtifact,
+) -> EvaluationHistoryItem:
+    return EvaluationHistoryItem(
+        evaluation_id=artifact.evaluation_id,
+        created_at=artifact.created_at,
+        application_version=artifact.application_version,
+        artifact_type=artifact.artifact_type,
+        result_sha256=artifact.result_sha256,
+        case_ids=_evaluation_case_ids(artifact),
+    )
+
+
 def create_app(
     store: CaseStore | None = None,
     artifact_store: InvestigationArtifactStore | None = None,
+    evaluation_store: EvaluationArtifactStore | None = None,
 ) -> FastAPI:
     store = store if store is not None else CaseStore()
     artifact_store = (
         artifact_store
         if artifact_store is not None
         else InvestigationArtifactStore(Path(".aelyq/investigation-runs"))
+    )
+    evaluation_store = (
+        evaluation_store
+        if evaluation_store is not None
+        else EvaluationArtifactStore(Path(".aelyq/evaluations"))
     )
     app = FastAPI(
         title="AELYQ — synthetic case API", version=__version__,
@@ -198,6 +244,58 @@ def create_app(
                 requested_model=artifact.run.requested_model,
                 contract_status=artifact.run.contract_status,
             )
+            for artifact in artifacts
+        ]
+
+    @app.get(
+        "/evaluations",
+        response_model=list[EvaluationHistoryItem],
+    )
+    def list_evaluations() -> list[EvaluationHistoryItem]:
+        try:
+            artifacts = evaluation_store.list_all()
+        except EvaluationArtifactError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        return [
+            _evaluation_history_item(artifact)
+            for artifact in artifacts
+        ]
+
+    @app.get(
+        "/evaluations/{evaluation_id}",
+        response_model=EvaluationArtifact,
+    )
+    def get_evaluation(evaluation_id: str) -> EvaluationArtifact:
+        try:
+            return evaluation_store.get(evaluation_id)
+        except EvaluationArtifactError as exc:
+            status_code = (
+                404
+                if str(exc) == "Evaluation artifact not found."
+                else 500
+            )
+            raise HTTPException(
+                status_code=status_code,
+                detail=str(exc),
+            ) from exc
+
+    @app.get(
+        "/cases/{case_id}/evaluations",
+        response_model=list[EvaluationHistoryItem],
+    )
+    def list_case_evaluations(
+        case_id: CaseId,
+    ) -> list[EvaluationHistoryItem]:
+        store.get_case(case_id)
+
+        try:
+            artifacts = evaluation_store.list_for_case(case_id)
+        except EvaluationArtifactError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        return [
+            _evaluation_history_item(artifact)
             for artifact in artifacts
         ]
 
