@@ -21,6 +21,8 @@ from .investigator import run_mcp_investigation
 from .operator_ui import (
     render_operator_case,
     render_operator_error,
+    render_operator_evaluation,
+    render_operator_evaluation_index,
     render_operator_index,
     render_operator_investigation,
     render_operator_investigation_error,
@@ -54,6 +56,8 @@ class EvaluationHistoryItem(FrozenModel):
     case_ids: tuple[CaseId, ...]
 
 
+    quality_claim: Literal["not_established"] = "not_established"
+
 def _evaluation_case_ids(
     artifact: EvaluationArtifact,
 ) -> tuple[CaseId, ...]:
@@ -79,6 +83,7 @@ def _evaluation_history_item(
         result_sha256=artifact.result_sha256,
         case_ids=_evaluation_case_ids(artifact),
     )
+    quality_claim: Literal["not_established"]
 
 
 def create_app(
@@ -211,6 +216,117 @@ def create_app(
             ),
             headers={"Cache-Control": "no-store"},
         )
+
+    @app.get(
+        "/operator/evaluations",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    def operator_evaluation_index() -> HTMLResponse:
+        try:
+            artifacts = evaluation_store.list_all()
+        except EvaluationArtifactError as exc:
+            return HTMLResponse(
+                render_operator_investigation_error(str(exc)),
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        return HTMLResponse(
+            render_operator_evaluation_index(artifacts),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get(
+        "/operator/evaluations/{evaluation_id}",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    def operator_evaluation(evaluation_id: str) -> HTMLResponse:
+        try:
+            artifact = evaluation_store.get(evaluation_id)
+        except EvaluationArtifactError as exc:
+            status_code = (
+                404
+                if str(exc) in {
+                    "Invalid evaluation ID.",
+                    "Evaluation artifact not found.",
+                }
+                else 500
+            )
+            return HTMLResponse(
+                render_operator_investigation_error(str(exc)),
+                status_code=status_code,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        return HTMLResponse(
+            render_operator_evaluation(artifact),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get(
+        "/evaluations",
+        response_model=list[EvaluationHistoryItem],
+    )
+    def list_evaluations() -> list[EvaluationHistoryItem]:
+        try:
+            artifacts = evaluation_store.list_all()
+        except EvaluationArtifactError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        items: list[EvaluationHistoryItem] = []
+
+        for artifact in artifacts:
+            if artifact.artifact_type == "benchmark":
+                case_ids = tuple(
+                    dict.fromkeys(
+                        item.case_id
+                        for item in artifact.result.evaluations
+                    )
+                )
+            else:
+                case_ids = (artifact.result.case_id,)
+
+            items.append(
+                EvaluationHistoryItem(
+                    evaluation_id=artifact.evaluation_id,
+                    created_at=artifact.created_at,
+                    application_version=artifact.application_version,
+                    artifact_type=artifact.artifact_type,
+                    result_sha256=artifact.result_sha256,
+                    case_ids=case_ids,
+                    quality_claim=artifact.result.quality_claim,
+                )
+            )
+
+        return items
+
+
+    @app.get(
+        "/evaluations/{evaluation_id}",
+        response_model=EvaluationArtifact,
+    )
+    def get_evaluation(evaluation_id: str) -> EvaluationArtifact:
+        try:
+            return evaluation_store.get(evaluation_id)
+        except EvaluationArtifactError as exc:
+            message = str(exc)
+
+            if message in {
+                "Invalid evaluation ID.",
+                "Evaluation artifact not found.",
+            }:
+                raise HTTPException(
+                    status_code=404,
+                    detail=message,
+                ) from exc
+
+            raise HTTPException(
+                status_code=500,
+                detail=message,
+            ) from exc
+
 
     @app.get("/cases", response_model=CaseList)
     def list_cases() -> CaseList:

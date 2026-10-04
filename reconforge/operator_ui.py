@@ -5,6 +5,7 @@ from html import escape
 from .cases import CaseList, EvidenceRecord, ReconciliationCase
 from .investigation import InvestigationRun
 from .investigation_store import InvestigationArtifact
+from .evaluation_store import EvaluationArtifact
 from .money import format_eur
 from .reports import VerifiedReport
 
@@ -91,6 +92,7 @@ def render_operator_index(case_list: CaseList) -> str:
 <h1>Investigation cases</h1>
 <p class="subtle">A deterministic view of the captured synthetic reconciliation cases.</p>
 <div class="notice">Financial facts are calculated by code. This interface is read-only and does not authorize financial actions.</div>
+<p><a href="/operator/evaluations">→ Evaluation history</a></p>
 {''.join(rows)}
 """
     return _page("Cases", body)
@@ -429,3 +431,245 @@ def render_operator_investigation_error(message: str) -> str:
 """
 
     return _page("Investigation unavailable", body)
+
+def render_operator_evaluation_index(
+    artifacts: tuple[EvaluationArtifact, ...],
+) -> str:
+    """Render persisted evaluation history without exposing raw internals."""
+
+    rows = []
+
+    for artifact in artifacts:
+        if artifact.artifact_type == "benchmark":
+            case_ids = tuple(
+                dict.fromkeys(
+                    item.case_id
+                    for item in artifact.result.evaluations
+                )
+            )
+            summary = artifact.result.summary
+
+            headline = (
+                f"Contract: {summary.contract_pass_count}/"
+                f"{summary.run_count} · "
+                f"Evidence: {summary.mean_required_evidence_coverage:.0%}"
+            )
+        else:
+            case_ids = (artifact.result.case_id,)
+            headline = (
+                f"Runs: {artifact.result.run_count} · "
+                f"Evidence agreement: "
+                f"{artifact.result.evidence_selection_agreement:.0%}"
+            )
+
+        case_text = ", ".join(_text(case_id) for case_id in case_ids)
+
+        rows.append(
+            f"""<a class="case-link"
+href="/operator/evaluations/{_text(artifact.evaluation_id)}">
+  <div class="case-row">
+    <div>
+      <div class="case-id">{_text(artifact.artifact_type)}</div>
+      <div class="tiny">{case_text}</div>
+      <div class="tiny">
+        {_text(artifact.created_at.isoformat())}
+        · SHA-256 {_text(artifact.result_sha256[:16])}…
+      </div>
+    </div>
+    <span class="status ok">{_text(headline)}</span>
+  </div>
+</a>"""
+        )
+
+    body = f"""
+<p><a href="/operator">← Cases</a></p>
+<h1>Evaluation history</h1>
+<p class="subtle">
+  Immutable descriptive measurements for investigator runs.
+</p>
+<div class="notice">
+  Evaluation artifacts are verified through their stored SHA-256 digest before
+  they are rendered. These measurements do not establish model quality or
+  optimal priorities.
+</div>
+{''.join(rows) if rows else '<p class="subtle">No persisted evaluations.</p>'}
+"""
+
+    return _page("Evaluation history", body)
+
+
+def render_operator_evaluation(
+    artifact: EvaluationArtifact,
+) -> str:
+    """Render one verified evaluation artifact."""
+
+    if artifact.artifact_type == "benchmark":
+        result = artifact.result
+        summary = result.summary
+
+        case_rows = "".join(
+            f"""<tr>
+  <td><code>{_text(item.case_id)}</code></td>
+  <td>{_text(item.mode)}</td>
+  <td>{_text(item.requested_model or "—")}</td>
+  <td>{str(item.evaluation.contract_passed).lower()}</td>
+  <td>{str(item.evaluation.case_context_matches).lower()}</td>
+  <td>{item.evaluation.required_evidence_coverage:.0%}</td>
+  <td>{item.evaluation.extra_evidence_count}</td>
+</tr>"""
+            for item in result.evaluations
+        )
+
+        body = f"""
+<p><a href="/operator/evaluations">← Evaluation history</a></p>
+<h1>Benchmark evaluation</h1>
+
+<div class="meta">
+  <span>ID: <code>{_text(artifact.evaluation_id)}</code></span>
+  <span>Created: {_text(artifact.created_at.isoformat())}</span>
+  <span>Version: <code>{_text(artifact.application_version)}</code></span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="label">Runs evaluated</div>
+    <strong>{summary.run_count}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Contract passed</div>
+    <strong>{summary.contract_pass_count}/{summary.run_count}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Context matched</div>
+    <strong>{summary.case_context_match_count}/{summary.run_count}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Evidence coverage</div>
+    <strong>{summary.mean_required_evidence_coverage:.0%}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Extra evidence rows</div>
+    <strong>{summary.total_extra_evidence_count}</strong>
+  </div>
+</div>
+
+<section>
+  <h2>Reference-order agreement</h2>
+  <ul>
+    <li>Hypotheses: {_text(f"{summary.hypothesis_order_match_rate:.0%}")}</li>
+    <li>Questions: {_text(f"{summary.question_order_match_rate:.0%}")}</li>
+    <li>Next steps: {_text(f"{summary.next_step_order_match_rate:.0%}")}</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Individual evaluations</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Case</th>
+          <th>Mode</th>
+          <th>Model</th>
+          <th>Contract</th>
+          <th>Context</th>
+          <th>Evidence</th>
+          <th>Extra rows</th>
+        </tr>
+      </thead>
+      <tbody>{case_rows}</tbody>
+    </table>
+  </div>
+</section>
+
+<div class="notice">
+  Quality claim:
+  <code>{_text(result.quality_claim)}</code>.
+  Agreement with the deterministic reference ordering is descriptive only.
+</div>
+
+<p class="tiny">
+  Artifact SHA-256:
+  <code>{_text(artifact.result_sha256)}</code>
+</p>
+"""
+
+    else:
+        result = artifact.result
+
+        body = f"""
+<p><a href="/operator/evaluations">← Evaluation history</a></p>
+<h1>Repeatability evaluation</h1>
+
+<div class="meta">
+  <span>ID: <code>{_text(artifact.evaluation_id)}</code></span>
+  <span>Case: <code>{_text(result.case_id)}</code></span>
+  <span>Mode: {_text(result.mode)}</span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="label">Runs</div>
+    <strong>{result.run_count}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Contract passed</div>
+    <strong>{result.contract_pass_count}/{result.run_count}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Context matched</div>
+    <strong>{result.case_context_match_count}/{result.run_count}</strong>
+  </div>
+  <div class="card">
+    <div class="label">Evidence agreement</div>
+    <strong>{result.evidence_selection_agreement:.0%}</strong>
+  </div>
+</div>
+
+<section>
+  <h2>Consistency measurements</h2>
+  <ul>
+    <li>Distinct evidence selections:
+      {_text(result.distinct_evidence_selections)}
+    </li>
+    <li>Evidence selection agreement:
+      {_text(f"{result.evidence_selection_agreement:.0%}")}
+    </li>
+    <li>Distinct hypothesis orders:
+      {_text(result.distinct_hypothesis_orders)}
+    </li>
+    <li>Hypothesis order agreement:
+      {_text(f"{result.hypothesis_order_agreement:.0%}")}
+    </li>
+    <li>Distinct question orders:
+      {_text(result.distinct_question_orders)}
+    </li>
+    <li>Question order agreement:
+      {_text(f"{result.question_order_agreement:.0%}")}
+    </li>
+    <li>Distinct next-step orders:
+      {_text(result.distinct_next_step_orders)}
+    </li>
+    <li>Next-step order agreement:
+      {_text(f"{result.next_step_order_agreement:.0%}")}
+    </li>
+  </ul>
+</section>
+
+<div class="notice">
+  Quality claim:
+  <code>{_text(result.quality_claim)}</code>.
+  Consistency is descriptive only; it does not establish that repeated
+  priorities are correct or optimal.
+</div>
+
+<p class="tiny">
+  Artifact SHA-256:
+  <code>{_text(artifact.result_sha256)}</code>
+</p>
+"""
+
+    return _page(
+        f"Evaluation {artifact.evaluation_id}",
+        body,
+    )
