@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+from pathlib import Path
 
 from .cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID
 from .evaluation import (
@@ -16,9 +17,21 @@ from .evaluation import (
 )
 from .investigation import InvestigationError, InvestigationRun
 from .investigator import run_mcp_investigation
+from .evaluation_store import EvaluationArtifact, EvaluationArtifactStore
 
 
 DEFAULT_EVALUATION_CASES = (CASE_ID, BANK_CASE_ID, TIMING_CASE_ID)
+
+
+DEFAULT_EVALUATION_DIRECTORY = Path(".aelyq/evaluations")
+
+
+def persist_evaluation(
+    result: InvestigationBenchmark | InvestigationRepeatability,
+) -> EvaluationArtifact:
+    """Persist a descriptive benchmark or repeatability result immutably."""
+    store = EvaluationArtifactStore(DEFAULT_EVALUATION_DIRECTORY)
+    return store.save(result)
 
 
 def render_evaluation(result: InvestigationEvaluation) -> str:
@@ -213,6 +226,11 @@ def main() -> None:
     )
     parser.add_argument("--json", action="store_true", help="Print structured evaluation JSON.")
     parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist benchmark or repeatability results as an immutable evaluation artifact.",
+    )
+    parser.add_argument(
         "--repeat",
         type=int,
         metavar="N",
@@ -221,6 +239,11 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.persist and not (args.all or args.repeat is not None):
+            parser.error("--persist requires --all or --repeat.")
+
+        artifact = None
+
         if args.repeat is not None:
             if args.all:
                 parser.error("--repeat cannot be combined with --all.")
@@ -230,13 +253,33 @@ def main() -> None:
                 evaluate_repeat(args.case_id, args.repeat)
             )
             rendered = render_repeatability(result)
+
         elif args.all:
             result = asyncio.run(evaluate_benchmark())
             rendered = render_benchmark(result)
+
         else:
             result = asyncio.run(evaluate_case(args.case_id or CASE_ID))
             rendered = render_evaluation(result)
-        print(result.model_dump_json(indent=2) if args.json else rendered)
+
+        if args.persist:
+            artifact = persist_evaluation(result)
+
+        if args.json:
+            if artifact is not None:
+                print(artifact.model_dump_json(indent=2))
+            else:
+                print(result.model_dump_json(indent=2))
+        else:
+            print(rendered)
+            if artifact is not None:
+                print()
+                print("## Persisted evaluation artifact")
+                print()
+                print(f"- evaluation ID: `{artifact.evaluation_id}`")
+                print(f"- artifact type: `{artifact.artifact_type}`")
+                print(f"- SHA-256: `{artifact.result_sha256}`")
+                print(f"- path: `{DEFAULT_EVALUATION_DIRECTORY / (artifact.evaluation_id + '.json')}`")
     except InvestigationError as exc:
         print(f"Evaluation stopped: {exc}")
         raise SystemExit(1) from None
