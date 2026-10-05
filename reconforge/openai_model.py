@@ -72,12 +72,20 @@ KNOWN_PROVIDER_MESSAGES = {
         "Check the organization spend limit; "
         "no automatic retry was made."
     ),
+    (429, "organization_usage_limit_exceeded"): (
+        "Check the organization usage limit; "
+        "no automatic retry was made."
+    ),
     (429, "project_spend_limit_exceeded"): (
         "Check the project spend limit; "
         "no automatic retry was made."
     ),
     (429, "usage_limit_exceeded"): (
         "Check the API usage limit; "
+        "no automatic retry was made."
+    ),
+    (429, "credit_balance_exhausted"): (
+        "API credit balance is exhausted; "
         "no automatic retry was made."
     ),
 }
@@ -127,8 +135,8 @@ def classify_provider_error(
     if known_message is not None:
         return known_message
 
-    # OpenAI can communicate insufficient quota through the
-    # error type even when no explicit error code is supplied.
+    # Some quota responses identify the condition through the
+    # error type without providing a specific error code.
     if (
         status_code == 429
         and provider_type == "insufficient_quota"
