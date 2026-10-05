@@ -34,7 +34,8 @@ MAX_ERROR_BODY_BYTES = 16_384
 
 
 GENERIC_429_MESSAGE = (
-    "Check OpenAI quota or rate limits; no retry was made."
+    "HTTP 429: Check OpenAI quota or rate limits; "
+    "no automatic retry was made."
 )
 
 
@@ -53,14 +54,31 @@ KNOWN_PROVIDER_MESSAGES = {
     # Billing / quota / rate limiting
     (429, "insufficient_quota"): (
         "Check for insufficient quota or project spend capacity; "
-        "no retry was made."
+        "no automatic retry was made."
     ),
     (429, "billing_hard_limit_reached"): (
-        "Check the billing or spend limit; no retry was made."
+        "Check the billing or spend limit; "
+        "no automatic retry was made."
     ),
     (429, "rate_limit_exceeded"): (
         "Check the request or usage rate limit; "
-        "no retry was made."
+        "no automatic retry was made."
+    ),
+    (429, "slow_down"): (
+        "Check the rate limit; "
+        "no automatic retry was made."
+    ),
+    (429, "organization_spend_limit_exceeded"): (
+        "Check the organization spend limit; "
+        "no automatic retry was made."
+    ),
+    (429, "project_spend_limit_exceeded"): (
+        "Check the project spend limit; "
+        "no automatic retry was made."
+    ),
+    (429, "usage_limit_exceeded"): (
+        "Check the API usage limit; "
+        "no automatic retry was made."
     ),
 }
 
@@ -76,9 +94,8 @@ def classify_provider_error(
     """
 
     provider_code = None
+    provider_type = None
 
-    # Parse only the bounded provider error body.
-    # Any malformed, oversized, or unexpected body falls back safely.
     try:
         decoded = body.decode("utf-8")
         payload = parse_object(decoded)
@@ -87,9 +104,12 @@ def classify_provider_error(
 
         if isinstance(error, dict):
             candidate = error.get("code")
-
             if isinstance(candidate, str):
                 provider_code = candidate
+
+            candidate_type = error.get("type")
+            if isinstance(candidate_type, str):
+                provider_type = candidate_type
 
     except (
         UnicodeDecodeError,
@@ -98,6 +118,7 @@ def classify_provider_error(
         TypeError,
     ):
         provider_code = None
+        provider_type = None
 
     known_message = KNOWN_PROVIDER_MESSAGES.get(
         (status_code, provider_code)
@@ -106,16 +127,22 @@ def classify_provider_error(
     if known_message is not None:
         return known_message
 
-    if status_code == 401:
+    # OpenAI can communicate insufficient quota through the
+    # error type even when no explicit error code is supplied.
+    if (
+        status_code == 429
+        and provider_type == "insufficient_quota"
+    ):
         return (
-            "Check the API key; no retry was made."
+            "Check for insufficient quota or project spend capacity; "
+            "no automatic retry was made."
         )
 
+    if status_code == 401:
+        return "Check your API key."
+
     if status_code == 403:
-        return (
-            "Check project and model permissions; "
-            "no retry was made."
-        )
+        return "Check project and model permissions."
 
     if status_code == 429:
         return GENERIC_429_MESSAGE
