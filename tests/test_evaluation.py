@@ -146,6 +146,12 @@ class InvestigationEvaluationTests(unittest.TestCase):
     def test_multi_run_summary_aggregates_only_descriptive_measurements(self):
         evaluations = (
             InvestigationEvaluation(
+                evaluated_at="2026-10-04T00:00:00+00:00",
+                python_runtime="3.12.14",
+                mode="scripted_offline",
+                requested_model=None,
+                returned_models=(),
+                elapsed_seconds=0.001,
                 contract_passed=True,
                 case_context_matches=True,
                 required_evidence_coverage=1.0,
@@ -154,14 +160,20 @@ class InvestigationEvaluationTests(unittest.TestCase):
                 question_order_matches_reference=True,
                 next_step_order_matches_reference=True,
             ),
-            InvestigationEvaluation(
-                contract_passed=False,
-                case_context_matches=True,
-                required_evidence_coverage=0.5,
-                extra_evidence_count=2,
-                hypothesis_order_matches_reference=False,
-                question_order_matches_reference=True,
-                next_step_order_matches_reference=False,
+                InvestigationEvaluation(
+                    evaluated_at="2026-10-04T00:00:01+00:00",
+                    python_runtime="3.12.14",
+                    mode="scripted_offline",
+                    requested_model=None,
+                    returned_models=(),
+                    elapsed_seconds=0.002,
+                    contract_passed=False,
+                    case_context_matches=True,
+                    required_evidence_coverage=0.5,
+                    extra_evidence_count=2,
+                    hypothesis_order_matches_reference=False,
+                    question_order_matches_reference=True,
+                    next_step_order_matches_reference=False,
             ),
         )
 
@@ -315,3 +327,51 @@ class InvestigationEvaluationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvaluationProvenanceTests(unittest.TestCase):
+    def test_evaluation_contains_execution_provenance(self):
+        import asyncio
+
+        from reconforge.evaluation_demo import evaluate_case
+
+        result = asyncio.run(
+            evaluate_case("case_bank_shortfall_001")
+        )
+
+        self.assertEqual(result.mode, "scripted_offline")
+        self.assertIsNone(result.requested_model)
+        self.assertEqual(result.returned_models, ())
+        self.assertGreaterEqual(result.elapsed_seconds, 0.0)
+        self.assertTrue(result.evaluated_at.endswith("+00:00"))
+        self.assertRegex(result.python_runtime, r"^\d+\.\d+\.\d+$")
+
+    def test_negative_elapsed_time_is_rejected(self):
+        import asyncio
+
+        from reconforge.evaluation_demo import evaluate_case
+
+        result = asyncio.run(
+            evaluate_case("case_bank_shortfall_001")
+        )
+
+        from reconforge.evaluation import evaluate_run
+        from reconforge.investigator import run_mcp_investigation
+
+        run = asyncio.run(
+            run_mcp_investigation("case_bank_shortfall_001")
+        )
+
+        with self.assertRaises(ValueError):
+            evaluate_run(run, elapsed_seconds=-1)
+
+    def test_quality_claim_remains_not_established(self):
+        import asyncio
+
+        from reconforge.evaluation_demo import evaluate_case
+
+        result = asyncio.run(
+            evaluate_case("case_bank_shortfall_001")
+        )
+
+        self.assertEqual(result.quality_claim, "not_established")

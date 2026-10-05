@@ -9,6 +9,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from . import __version__
 from .cases import CaseId, Digest, FrozenModel
+from datetime import datetime, timezone
+from platform import python_version
+from time import perf_counter
 from typing import Literal
 
 from pydantic import Field, StrictInt
@@ -21,6 +24,12 @@ class InvestigationEvaluation(FrozenModel):
     """Reproducible measurements for one accepted investigation run."""
 
     schema_version: Literal["0.1.0"] = "0.1.0"
+    evaluated_at: str
+    python_runtime: str
+    mode: Literal["scripted_offline", "openai_live", "anthropic_live"]
+    requested_model: str | None
+    returned_models: tuple[str, ...]
+    elapsed_seconds: float = Field(ge=0.0)
     contract_passed: bool
     case_context_matches: bool
     required_evidence_coverage: float = Field(ge=0.0, le=1.0)
@@ -30,13 +39,23 @@ class InvestigationEvaluation(FrozenModel):
     next_step_order_matches_reference: bool
     quality_claim: Literal["not_established"] = "not_established"
 
-def evaluate_run(run: InvestigationRun) -> InvestigationEvaluation:
+def evaluate_run(
+    run: InvestigationRun,
+    *,
+    elapsed_seconds: float = 0.0,
+) -> InvestigationEvaluation:
     """Measure an accepted run without claiming that its priorities are optimal.
 
     The reference ordering is the deterministic ordering already present in the
     verified report. Agreement is reported only as agreement with that explicit
     reference; it is not an AI-quality score.
+
+    ``elapsed_seconds`` is supplied by the caller because timing belongs to the
+    execution boundary, not the immutable investigation result itself.
     """
+
+    if type(elapsed_seconds) not in (int, float) or elapsed_seconds < 0:
+        raise ValueError("elapsed_seconds must be a non-negative number.")
 
     proposal = run.proposal
     report = run.report.report
@@ -46,6 +65,12 @@ def evaluate_run(run: InvestigationRun) -> InvestigationEvaluation:
     coverage = 1.0 if not required else len(required & cited) / len(required)
 
     return InvestigationEvaluation(
+        evaluated_at=datetime.now(timezone.utc).isoformat(),
+        python_runtime=python_version(),
+        mode=run.mode,
+        requested_model=run.requested_model,
+        returned_models=run.returned_models,
+        elapsed_seconds=float(elapsed_seconds),
         contract_passed=run.contract_status == "passed",
         case_context_matches=(
             proposal.case_id == report.case_id

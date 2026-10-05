@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+from time import perf_counter
 from pathlib import Path
 
 from .cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID
@@ -171,8 +172,10 @@ def render_repeatability(result: InvestigationRepeatability) -> str:
 
 async def evaluate_case(case_id: str) -> InvestigationEvaluation:
     """Run one provider-free MCP investigation and evaluate the accepted result."""
+    started = perf_counter()
     run = await run_mcp_investigation(case_id)
-    return evaluate_run(run)
+    elapsed = perf_counter() - started
+    return evaluate_run(run, elapsed_seconds=elapsed)
 
 async def run_cases(
     case_ids: tuple[str, ...] = DEFAULT_EVALUATION_CASES,
