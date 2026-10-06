@@ -221,9 +221,27 @@ async def evaluate_live_benchmark(
     model: AnthropicMessagesModel,
 ) -> InvestigationBenchmark:
     """Build the same descriptive benchmark from Anthropic runs."""
-    runs = await run_live_cases(case_ids, model)
-    return build_benchmark(runs)
+    runs = []
+    elapsed_seconds = []
 
+    for case_id in case_ids:
+        started = perf_counter()
+        run = await run_mcp_investigation(case_id, model)
+        elapsed_seconds.append(perf_counter() - started)
+        runs.append(run)
+
+    runs_tuple = tuple(runs)
+    elapsed_tuple = tuple(elapsed_seconds)
+
+    if any(run.mode != "anthropic_live" for run in runs_tuple):
+        raise InvestigationError(
+            "The live evaluator received a non-Anthropic run."
+        )
+
+    return build_benchmark(
+        runs_tuple,
+        elapsed_seconds=elapsed_tuple,
+    )
 
 async def evaluate_live_repeat(
     case_id: str,
@@ -260,9 +278,20 @@ async def run_cases(
 async def evaluate_benchmark(
     case_ids: tuple[str, ...] = DEFAULT_EVALUATION_CASES,
 ) -> InvestigationBenchmark:
-    """Run the bundled cases once and build descriptive benchmark measurements."""
-    runs = await run_cases(case_ids)
-    return build_benchmark(runs)
+    """Run the bundled cases once and preserve execution timing."""
+    runs = []
+    elapsed_seconds = []
+
+    for case_id in case_ids:
+        started = perf_counter()
+        run = await run_mcp_investigation(case_id)
+        elapsed_seconds.append(perf_counter() - started)
+        runs.append(run)
+
+    return build_benchmark(
+        tuple(runs),
+        elapsed_seconds=tuple(elapsed_seconds),
+    )
 
 async def evaluate_repeat(
     case_id: str,

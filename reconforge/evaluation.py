@@ -183,11 +183,21 @@ def summarize_evaluations(
 
 def build_benchmark(
     runs: tuple[InvestigationRun, ...],
+    *,
+    elapsed_seconds: tuple[float, ...] | None = None,
 ) -> InvestigationBenchmark:
     """Build a reproducible benchmark without creating a model-quality score."""
 
     if not runs:
         raise ValueError("At least one investigation run is required.")
+
+    if elapsed_seconds is None:
+        elapsed_seconds = (0.0,) * len(runs)
+
+    if len(elapsed_seconds) != len(runs):
+        raise ValueError(
+            "elapsed_seconds must contain one value per investigation run."
+        )
 
     items = tuple(
         InvestigationBenchmarkItem(
@@ -195,9 +205,12 @@ def build_benchmark(
             case_version=run.proposal.case_version,
             mode=run.mode,
             requested_model=run.requested_model,
-            evaluation=evaluate_run(run),
+            evaluation=evaluate_run(
+                run,
+                elapsed_seconds=elapsed_seconds[index],
+            ),
         )
-        for run in runs
+        for index, run in enumerate(runs)
     )
 
     summary = summarize_evaluations(
