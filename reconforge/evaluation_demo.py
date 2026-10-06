@@ -1,10 +1,13 @@
-"""Run the offline bounded investigator and report objective evaluation measurements."""
+"""Run bounded investigator evaluation offline or explicitly against Anthropic."""
 
 import argparse
 import asyncio
+import getpass
+import os
 from time import perf_counter
 from pathlib import Path
 
+from .anthropic_model import AnthropicMessagesModel
 from .cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID
 from .evaluation import (
     InvestigationBenchmark,
@@ -177,6 +180,73 @@ async def evaluate_case(case_id: str) -> InvestigationEvaluation:
     elapsed = perf_counter() - started
     return evaluate_run(run, elapsed_seconds=elapsed)
 
+async def evaluate_live_case(
+    case_id: str,
+    model: AnthropicMessagesModel,
+) -> InvestigationEvaluation:
+    """Run one bounded Anthropic investigation and evaluate it."""
+    started = perf_counter()
+    run = await run_mcp_investigation(case_id, model)
+    elapsed = perf_counter() - started
+
+    if run.mode != "anthropic_live":
+        raise InvestigationError("The live evaluator did not receive an Anthropic run.")
+
+    return evaluate_run(run, elapsed_seconds=elapsed)
+
+
+async def run_live_cases(
+    case_ids: tuple[str, ...],
+    model: AnthropicMessagesModel,
+) -> tuple[InvestigationRun, ...]:
+    """Run selected cases against Anthropic and preserve complete runs."""
+    if not case_ids:
+        raise ValueError("At least one case ID is required.")
+
+    runs_list = []
+    for case_id in case_ids:
+        runs_list.append(
+            await run_mcp_investigation(case_id, model)
+        )
+    runs = tuple(runs_list)
+
+    if any(run.mode != "anthropic_live" for run in runs):
+        raise InvestigationError("The live evaluator received a non-Anthropic run.")
+
+    return runs
+
+
+async def evaluate_live_benchmark(
+    case_ids: tuple[str, ...],
+    model: AnthropicMessagesModel,
+) -> InvestigationBenchmark:
+    """Build the same descriptive benchmark from Anthropic runs."""
+    runs = await run_live_cases(case_ids, model)
+    return build_benchmark(runs)
+
+
+async def evaluate_live_repeat(
+    case_id: str,
+    repeat_count: int,
+    model: AnthropicMessagesModel,
+) -> InvestigationRepeatability:
+    """Repeat one Anthropic investigation and measure consistency."""
+    if repeat_count < 2:
+        raise ValueError("Repeat count must be at least 2.")
+
+    runs_list = []
+    for _ in range(repeat_count):
+        runs_list.append(
+            await run_mcp_investigation(case_id, model)
+        )
+    runs = tuple(runs_list)
+
+    if any(run.mode != "anthropic_live" for run in runs):
+        raise InvestigationError("The live evaluator received a non-Anthropic run.")
+
+    return evaluate_repeatability(runs)
+
+
 async def run_cases(
     case_ids: tuple[str, ...] = DEFAULT_EVALUATION_CASES,
 ) -> tuple[InvestigationRun, ...]:
@@ -220,72 +290,207 @@ async def evaluate_cases(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+
     selection = parser.add_mutually_exclusive_group()
-    selection.add_argument("--case-id", choices=list(DEFAULT_EVALUATION_CASES))
+    selection.add_argument(
+        "--case-id",
+        choices=list(DEFAULT_EVALUATION_CASES),
+    )
     selection.add_argument(
         "--all",
         action="store_true",
-        help="Evaluate every bundled synthetic case once and summarize the results.",
+        help="Evaluate every bundled synthetic case once.",
     )
-    parser.add_argument("--json", action="store_true", help="Print structured evaluation JSON.")
-    parser.add_argument(
-        "--persist",
-        action="store_true",
-        help="Persist benchmark or repeatability results as an immutable evaluation artifact.",
-    )
+
     parser.add_argument(
         "--repeat",
         type=int,
         metavar="N",
         help="Repeat one selected case N times and measure consistency.",
     )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Use the Anthropic live investigator instead of the offline simulator.",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=("anthropic",),
+        help="Live provider. Anthropic is the only live evaluation provider.",
+    )
+    parser.add_argument(
+        "--model",
+        help="Explicit Anthropic model ID; or set RECONFORGE_MODEL.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print structured evaluation JSON.",
+    )
+    parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist benchmark or repeatability results as an immutable evaluation artifact.",
+    )
+
     args = parser.parse_args()
 
     try:
         if args.persist and not (args.all or args.repeat is not None):
             parser.error("--persist requires --all or --repeat.")
 
-        artifact = None
+        if args.provider and not args.live:
+            parser.error("--provider is only used with --live.")
+
+        if args.model and not args.live:
+            parser.error("--model is only used with --live.")
+
+        if args.live:
+            if not (args.case_id or args.all or args.repeat is not None):
+                parser.error(
+                    "--live requires --case-id, --all, or --repeat."
+                )
+
+            if args.repeat is not None and not args.case_id:
+                parser.error("--repeat requires --case-id.")
+
+            if args.repeat is not None and args.all:
+                parser.error("--repeat cannot be combined with --all.")
+
+            provider = args.provider or "anthropic"
+
+            if provider != "anthropic":
+                parser.error("Only Anthropic is enabled for live evaluation.")
+
+            model_id = args.model or os.environ.get("RECONFORGE_MODEL")
+
+            if not model_id:
+                parser.error(
+                    "--live requires --model MODEL_ID "
+                    "or RECONFORGE_MODEL."
+                )
+
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+            if not api_key:
+                if not os.isatty(0):
+                    parser.error(
+                        "Run interactively for a hidden Anthropic API-key prompt, "
+                        "or set ANTHROPIC_API_KEY locally."
+                    )
+                api_key = getpass.getpass(
+                    "Anthropic API key (hidden; not saved): "
+                )
+
+            model = AnthropicMessagesModel(api_key, model_id)
+
+            if args.repeat is not None:
+                result = asyncio.run(
+                    evaluate_live_repeat(
+                        args.case_id,
+                        args.repeat,
+                        model,
+                    )
+                )
+                rendered = render_repeatability(result)
+
+                if args.persist:
+                    artifact = persist_evaluation(result)
+                    rendered += (
+                        "\n\n"
+                        f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                    )
+
+            elif args.all:
+                result = asyncio.run(
+                    evaluate_live_benchmark(
+                        DEFAULT_EVALUATION_CASES,
+                        model,
+                    )
+                )
+                rendered = render_benchmark(result)
+
+                if args.persist:
+                    artifact = persist_evaluation(result)
+                    rendered += (
+                        "\n\n"
+                        f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                    )
+
+            else:
+                result = asyncio.run(
+                    evaluate_live_case(
+                        args.case_id,
+                        model,
+                    )
+                )
+                rendered = render_evaluation(result)
+
+            if args.json:
+                if args.repeat is not None or args.all:
+                    print(result.model_dump_json(indent=2))
+                else:
+                    print(result.model_dump_json(indent=2))
+            else:
+                print(rendered)
+
+            return
+
+        # -------------------------
+        # Offline mode
+        # -------------------------
 
         if args.repeat is not None:
-            if args.all:
-                parser.error("--repeat cannot be combined with --all.")
             if not args.case_id:
                 parser.error("--repeat requires --case-id.")
+            if args.all:
+                parser.error("--repeat cannot be combined with --all.")
+
             result = asyncio.run(
-                evaluate_repeat(args.case_id, args.repeat)
+                evaluate_repeat(
+                    args.case_id,
+                    args.repeat,
+                )
             )
             rendered = render_repeatability(result)
 
+            if args.persist:
+                artifact = persist_evaluation(result)
+                rendered += (
+                    "\n\n"
+                    f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                )
+
         elif args.all:
-            result = asyncio.run(evaluate_benchmark())
+            result = asyncio.run(
+                evaluate_benchmark()
+            )
             rendered = render_benchmark(result)
 
+            if args.persist:
+                artifact = persist_evaluation(result)
+                rendered += (
+                    "\n\n"
+                    f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                )
+
         else:
-            result = asyncio.run(evaluate_case(args.case_id or CASE_ID))
+            case_id = args.case_id or CASE_ID
+            result = asyncio.run(
+                evaluate_case(case_id)
+            )
             rendered = render_evaluation(result)
 
-        if args.persist:
-            artifact = persist_evaluation(result)
+        print(
+            result.model_dump_json(indent=2)
+            if args.json
+            else rendered
+        )
 
-        if args.json:
-            if artifact is not None:
-                print(artifact.model_dump_json(indent=2))
-            else:
-                print(result.model_dump_json(indent=2))
-        else:
-            print(rendered)
-            if artifact is not None:
-                print()
-                print("## Persisted evaluation artifact")
-                print()
-                print(f"- evaluation ID: `{artifact.evaluation_id}`")
-                print(f"- artifact type: `{artifact.artifact_type}`")
-                print(f"- SHA-256: `{artifact.result_sha256}`")
-                print(f"- path: `{DEFAULT_EVALUATION_DIRECTORY / (artifact.evaluation_id + '.json')}`")
     except InvestigationError as exc:
         print(f"Evaluation stopped: {exc}")
         raise SystemExit(1) from None
+
     except KeyboardInterrupt:
         print("Evaluation cancelled.")
         raise SystemExit(130) from None
