@@ -427,7 +427,7 @@ def main() -> None:
                     artifact = persist_evaluation(result)
                     rendered += (
                         "\n\n"
-                        f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                        f"Persisted evaluation artifact: `{artifact.evaluation_id}`"
                     )
 
             elif args.all:
@@ -443,7 +443,7 @@ def main() -> None:
                     artifact = persist_evaluation(result)
                     rendered += (
                         "\n\n"
-                        f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                        f"Persisted evaluation artifact: `{artifact.evaluation_id}`"
                     )
 
             else:
@@ -487,7 +487,7 @@ def main() -> None:
                 artifact = persist_evaluation(result)
                 rendered += (
                     "\n\n"
-                    f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                    f"Persisted evaluation artifact: `{artifact.evaluation_id}`"
                 )
 
         elif args.all:
@@ -500,7 +500,7 @@ def main() -> None:
                 artifact = persist_evaluation(result)
                 rendered += (
                     "\n\n"
-                    f"Persisted evaluation artifact: `{artifact.artifact_id}`"
+                    f"Persisted evaluation artifact: `{artifact.evaluation_id}`"
                 )
 
         else:
