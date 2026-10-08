@@ -1,15 +1,19 @@
+import asyncio
+from reconforge.investigator import run_mcp_investigation
 import unittest
 from copy import deepcopy
 
 
 from reconforge.evaluation import (
     InvestigationEvaluation,
+    InvestigationMultiCaseRepeatability,
     build_benchmark,
     evaluate_repeatability,
+    evaluate_multi_case_repeatability,
     evaluate_run,
     summarize_evaluations,
 )
-from reconforge.cases import BANK_CASE_ID, CASE_ID, CaseStore
+from reconforge.cases import BANK_CASE_ID, CASE_ID, TIMING_CASE_ID, CaseStore
 from reconforge.evaluation import (
     InvestigationEvaluation,
     build_benchmark,
@@ -331,7 +335,6 @@ if __name__ == "__main__":
 
 class EvaluationProvenanceTests(unittest.TestCase):
     def test_evaluation_contains_execution_provenance(self):
-        import asyncio
 
         from reconforge.evaluation_demo import evaluate_case
 
@@ -347,7 +350,6 @@ class EvaluationProvenanceTests(unittest.TestCase):
         self.assertRegex(result.python_runtime, r"^\d+\.\d+\.\d+$")
 
     def test_negative_elapsed_time_is_rejected(self):
-        import asyncio
 
         from reconforge.evaluation_demo import evaluate_case
 
@@ -356,7 +358,6 @@ class EvaluationProvenanceTests(unittest.TestCase):
         )
 
         from reconforge.evaluation import evaluate_run
-        from reconforge.investigator import run_mcp_investigation
 
         run = asyncio.run(
             run_mcp_investigation("case_bank_shortfall_001")
@@ -366,7 +367,6 @@ class EvaluationProvenanceTests(unittest.TestCase):
             evaluate_run(run, elapsed_seconds=-1)
 
     def test_quality_claim_remains_not_established(self):
-        import asyncio
 
         from reconforge.evaluation_demo import evaluate_case
 
@@ -375,3 +375,98 @@ class EvaluationProvenanceTests(unittest.TestCase):
         )
 
         self.assertEqual(result.quality_claim, "not_established")
+
+class InvestigationMultiCaseRepeatabilityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.groups = []
+
+        for case_id in (
+            CASE_ID,
+            BANK_CASE_ID,
+            TIMING_CASE_ID,
+        ):
+            run = asyncio.run(
+                run_mcp_investigation(case_id)
+            )
+            cls.groups.append((run, run))
+
+        cls.groups = tuple(cls.groups)
+
+    def test_aggregates_each_case_independently(self):
+        result = evaluate_multi_case_repeatability(
+            self.groups
+        )
+
+        self.assertIsInstance(
+            result,
+            InvestigationMultiCaseRepeatability,
+        )
+        self.assertEqual(result.case_count, 3)
+        self.assertEqual(result.repeat_count, 2)
+        self.assertEqual(result.total_run_count, 6)
+        self.assertEqual(result.contract_pass_count, 6)
+        self.assertEqual(result.case_context_match_count, 6)
+
+        self.assertEqual(
+            result.mean_evidence_selection_agreement,
+            1.0,
+        )
+        self.assertEqual(
+            result.mean_hypothesis_order_agreement,
+            1.0,
+        )
+        self.assertEqual(
+            result.mean_question_order_agreement,
+            1.0,
+        )
+        self.assertEqual(
+            result.mean_next_step_order_agreement,
+            1.0,
+        )
+
+        self.assertEqual(
+            tuple(result.case_id for result in result.case_results),
+            (
+                CASE_ID,
+                BANK_CASE_ID,
+                TIMING_CASE_ID,
+            ),
+        )
+
+        self.assertEqual(
+            result.quality_claim,
+            "not_established",
+        )
+
+    def test_rejects_duplicate_case_groups(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Each case may appear only once",
+        ):
+            evaluate_multi_case_repeatability(
+                (
+                    self.groups[0],
+                    self.groups[0],
+                )
+            )
+
+    def test_rejects_mixed_repeat_counts(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "same repeat count",
+        ):
+            evaluate_multi_case_repeatability(
+                (
+                    self.groups[0],
+                    self.groups[1] + (self.groups[1][0],),
+                )
+            )
+
+    def test_rejects_empty_input(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "At least one repeated case group",
+        ):
+            evaluate_multi_case_repeatability(())
+

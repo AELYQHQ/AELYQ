@@ -11,7 +11,11 @@ from uuid import uuid4
 
 from . import __version__
 from .cases import Digest, FrozenModel
-from .evaluation import InvestigationBenchmark, InvestigationRepeatability
+from .evaluation import (
+    InvestigationBenchmark,
+    InvestigationMultiCaseRepeatability,
+    InvestigationRepeatability,
+)
 from .investigation import canonical_json
 
 
@@ -24,18 +28,24 @@ class EvaluationArtifact(FrozenModel):
     evaluation_id: str
     created_at: datetime
     application_version: str
-    artifact_type: Literal["benchmark", "repeatability"]
-    result: InvestigationBenchmark | InvestigationRepeatability
+    artifact_type: Literal[
+    "benchmark",
+    "repeatability",
+    "multi_case_repeatability",
+]
+    result: InvestigationBenchmark | InvestigationRepeatability | InvestigationMultiCaseRepeatability
     result_sha256: Digest
 
 
 def _result_type(
-    result: InvestigationBenchmark | InvestigationRepeatability,
+    result: InvestigationBenchmark | InvestigationRepeatability | InvestigationMultiCaseRepeatability,
 ) -> str:
     if isinstance(result, InvestigationBenchmark):
         return "benchmark"
     if isinstance(result, InvestigationRepeatability):
         return "repeatability"
+    if isinstance(result, InvestigationMultiCaseRepeatability):
+        return "multi_case_repeatability"
     raise EvaluationArtifactError("Unsupported evaluation result type.")
 
 
@@ -45,7 +55,7 @@ def _unsigned_payload(
     created_at: datetime,
     application_version: str,
     artifact_type: str,
-    result: InvestigationBenchmark | InvestigationRepeatability,
+    result: InvestigationBenchmark | InvestigationRepeatability | InvestigationMultiCaseRepeatability,
 ) -> dict:
     """Return the exact artifact fields covered by the integrity digest."""
     return {
@@ -64,7 +74,7 @@ def _artifact_digest(
     created_at: datetime,
     application_version: str,
     artifact_type: str,
-    result: InvestigationBenchmark | InvestigationRepeatability,
+    result: InvestigationBenchmark | InvestigationRepeatability | InvestigationMultiCaseRepeatability,
 ) -> str:
     canonical = canonical_json(
         _unsigned_payload(
@@ -95,7 +105,7 @@ class EvaluationArtifactStore:
 
     def save(
         self,
-        result: InvestigationBenchmark | InvestigationRepeatability,
+        result: InvestigationBenchmark | InvestigationRepeatability | InvestigationMultiCaseRepeatability,
         *,
         evaluation_id: str | None = None,
         created_at: datetime | None = None,

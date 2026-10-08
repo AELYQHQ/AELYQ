@@ -151,6 +151,47 @@ class InvestigationRepeatability(FrozenModel):
 
     quality_claim: Literal["not_established"] = "not_established"
 
+
+class InvestigationMultiCaseRepeatability(FrozenModel):
+    """Descriptive consistency measurements across multiple repeated cases."""
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    generated_at: datetime
+    application_version: str
+
+    mode: Literal["scripted_offline", "openai_live", "anthropic_live"]
+    requested_model: str | None
+
+    case_count: StrictInt = Field(ge=1)
+    repeat_count: StrictInt = Field(ge=2)
+    total_run_count: StrictInt = Field(ge=2)
+
+    contract_pass_count: StrictInt = Field(ge=0)
+    case_context_match_count: StrictInt = Field(ge=0)
+
+    mean_evidence_selection_agreement: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    mean_hypothesis_order_agreement: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    mean_question_order_agreement: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+    mean_next_step_order_agreement: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+
+    case_results: tuple[InvestigationRepeatability, ...] = Field(
+        min_length=1,
+    )
+
+    quality_claim: Literal["not_established"] = "not_established"
+
 def summarize_evaluations(
     evaluations: tuple[InvestigationEvaluation, ...],
 ) -> InvestigationEvaluationSummary:
@@ -293,3 +334,88 @@ def evaluate_repeatability(
         question_order_agreement=agreement(question_orders),
         next_step_order_agreement=agreement(next_step_orders),
     )
+
+def evaluate_multi_case_repeatability(
+    grouped_runs: tuple[tuple[InvestigationRun, ...], ...],
+) -> InvestigationMultiCaseRepeatability:
+    """Measure descriptive repeatability independently for multiple cases."""
+
+    if not grouped_runs:
+        raise ValueError("At least one repeated case group is required.")
+
+    results = tuple(
+        evaluate_repeatability(runs)
+        for runs in grouped_runs
+    )
+
+    case_ids = tuple(result.case_id for result in results)
+
+    if len(set(case_ids)) != len(case_ids):
+        raise ValueError(
+            "Each case may appear only once in a multi-case evaluation."
+        )
+
+    modes = {result.mode for result in results}
+    models = {result.requested_model for result in results}
+    repeat_counts = {result.run_count for result in results}
+
+    if len(modes) != 1 or len(models) != 1:
+        raise ValueError(
+            "All cases must use the same investigation configuration."
+        )
+
+    if len(repeat_counts) != 1:
+        raise ValueError(
+            "All cases must use the same repeat count."
+        )
+
+    first = results[0]
+
+    return InvestigationMultiCaseRepeatability(
+        generated_at=datetime.now(timezone.utc),
+        application_version=__version__,
+        mode=first.mode,
+        requested_model=first.requested_model,
+        case_count=len(results),
+        repeat_count=first.run_count,
+        total_run_count=sum(result.run_count for result in results),
+        contract_pass_count=sum(
+            result.contract_pass_count
+            for result in results
+        ),
+        case_context_match_count=sum(
+            result.case_context_match_count
+            for result in results
+        ),
+        mean_evidence_selection_agreement=(
+            sum(
+                result.evidence_selection_agreement
+                for result in results
+            )
+            / len(results)
+        ),
+        mean_hypothesis_order_agreement=(
+            sum(
+                result.hypothesis_order_agreement
+                for result in results
+            )
+            / len(results)
+        ),
+        mean_question_order_agreement=(
+            sum(
+                result.question_order_agreement
+                for result in results
+            )
+            / len(results)
+        ),
+        mean_next_step_order_agreement=(
+            sum(
+                result.next_step_order_agreement
+                for result in results
+            )
+            / len(results)
+        ),
+        case_results=results,
+        quality_claim="not_established",
+    )
+
