@@ -13,8 +13,10 @@ from .evaluation import (
     InvestigationBenchmark,
     InvestigationEvaluation,
     InvestigationEvaluationSummary,
+    InvestigationMultiCaseRepeatability,
     InvestigationRepeatability,
     build_benchmark,
+    evaluate_multi_case_repeatability,
     evaluate_repeatability,
     evaluate_run,
     summarize_evaluations,
@@ -31,7 +33,11 @@ DEFAULT_EVALUATION_DIRECTORY = Path(".aelyq/evaluations")
 
 
 def persist_evaluation(
-    result: InvestigationBenchmark | InvestigationRepeatability,
+    result: (
+        InvestigationBenchmark
+        | InvestigationRepeatability
+        | InvestigationMultiCaseRepeatability
+    ),
 ) -> EvaluationArtifact:
     """Persist a descriptive benchmark or repeatability result immutably."""
     store = EvaluationArtifactStore(DEFAULT_EVALUATION_DIRECTORY)
@@ -265,6 +271,40 @@ async def evaluate_live_repeat(
     return evaluate_repeatability(runs)
 
 
+async def evaluate_live_multi_repeat(
+    case_ids: tuple[str, ...],
+    repeat_count: int,
+    model: AnthropicMessagesModel,
+) -> InvestigationMultiCaseRepeatability:
+    """Repeat every selected Anthropic case and aggregate consistency."""
+    if not case_ids:
+        raise ValueError("At least one case ID is required.")
+
+    if repeat_count < 2:
+        raise ValueError("Repeat count must be at least 2.")
+
+    grouped_runs = []
+
+    for case_id in case_ids:
+        runs = []
+
+        for _ in range(repeat_count):
+            run = await run_mcp_investigation(case_id, model)
+
+            if run.mode != "anthropic_live":
+                raise InvestigationError(
+                    "The live evaluator received a non-Anthropic run."
+                )
+
+            runs.append(run)
+
+        grouped_runs.append(tuple(runs))
+
+    return evaluate_multi_case_repeatability(
+        tuple(grouped_runs)
+    )
+
+
 async def run_cases(
     case_ids: tuple[str, ...] = DEFAULT_EVALUATION_CASES,
 ) -> tuple[InvestigationRun, ...]:
@@ -307,6 +347,33 @@ async def evaluate_repeat(
     return evaluate_repeatability(runs)
 
 
+async def evaluate_multi_repeat(
+    case_ids: tuple[str, ...],
+    repeat_count: int,
+) -> InvestigationMultiCaseRepeatability:
+    """Repeat every selected offline case and aggregate consistency."""
+    if not case_ids:
+        raise ValueError("At least one case ID is required.")
+
+    if repeat_count < 2:
+        raise ValueError("Repeat count must be at least 2.")
+
+    grouped_runs = []
+
+    for case_id in case_ids:
+        runs = tuple(
+            [
+                await run_mcp_investigation(case_id)
+                for _ in range(repeat_count)
+            ]
+        )
+        grouped_runs.append(runs)
+
+    return evaluate_multi_case_repeatability(
+        tuple(grouped_runs)
+    )
+
+
 async def evaluate_cases(
     case_ids: tuple[str, ...] = DEFAULT_EVALUATION_CASES,
 ) -> InvestigationEvaluationSummary:
@@ -315,6 +382,79 @@ async def evaluate_cases(
         raise ValueError("At least one case ID is required.")
     evaluations = tuple([await evaluate_case(case_id) for case_id in case_ids])
     return summarize_evaluations(evaluations)
+
+
+
+async def _run_multi_case_repeatability_cli(repeat_count, model=None):
+    """Run each case N times and aggregate each case independently."""
+    groups = []
+    for case_id in DEFAULT_EVALUATION_CASES:
+        runs = []
+        for _ in range(repeat_count):
+            if model is None:
+                run = await run_mcp_investigation(case_id)
+            else:
+                run = await run_mcp_investigation(case_id, model)
+                if run.mode != "anthropic_live":
+                    raise InvestigationError(
+                        "A live repeatability run did not use Anthropic."
+                    )
+            runs.append(run)
+        groups.append(tuple(runs))
+    return evaluate_multi_case_repeatability(tuple(groups))
+
+
+def _handle_multi_case_repeatability_cli(args, parser):
+    """Handle the combined --all --repeat mode before single-case branches."""
+    import getpass
+    import os
+    import sys
+
+    if args.repeat < 2:
+        parser.error("--repeat must be at least 2.")
+    if args.provider and not args.live:
+        parser.error("--provider requires --live.")
+    if args.model and not args.live:
+        parser.error("--model requires --live.")
+
+    model = None
+    if args.live:
+        if args.provider not in (None, "anthropic"):
+            parser.error("Only Anthropic live evaluation is supported.")
+        model_id = args.model or os.environ.get("RECONFORGE_MODEL")
+        if not model_id:
+            parser.error("--live requires --model or RECONFORGE_MODEL.")
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            if not os.isatty(0):
+                parser.error("Set ANTHROPIC_API_KEY in your environment.")
+            api_key = getpass.getpass("Anthropic API key (hidden): ")
+        model = AnthropicMessagesModel(api_key, model_id)
+
+    result = asyncio.run(
+        _run_multi_case_repeatability_cli(args.repeat, model)
+    )
+    artifact = persist_evaluation(result) if args.persist else None
+
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print("# Multi-case repeatability")
+        print("Cases:", result.case_count)
+        print("Runs per case:", result.repeat_count)
+        print("Total runs:", result.total_run_count)
+        print("Contract passes:", result.contract_pass_count)
+        print("Case-context matches:", result.case_context_match_count)
+        print("Evidence agreement:", result.mean_evidence_selection_agreement)
+        print("Hypothesis agreement:", result.mean_hypothesis_order_agreement)
+        print("Question agreement:", result.mean_question_order_agreement)
+        print("Next-step agreement:", result.mean_next_step_order_agreement)
+        print("Quality claim:", result.quality_claim)
+    if artifact is not None:
+        print(
+            "Persisted evaluation artifact: " + artifact.evaluation_id,
+            file=sys.stderr if args.json else sys.stdout,
+        )
 
 
 def main() -> None:
@@ -364,6 +504,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.all and args.repeat is not None:
+        _handle_multi_case_repeatability_cli(args, parser)
+        return
+
     try:
         if args.persist and not (args.all or args.repeat is not None):
             parser.error("--persist requires --all or --repeat.")
@@ -380,11 +524,8 @@ def main() -> None:
                     "--live requires --case-id, --all, or --repeat."
                 )
 
-            if args.repeat is not None and not args.case_id:
-                parser.error("--repeat requires --case-id.")
-
-            if args.repeat is not None and args.all:
-                parser.error("--repeat cannot be combined with --all.")
+            if args.repeat is not None and not (args.case_id or args.all):
+                parser.error("--repeat requires --case-id or --all.")
 
             provider = args.provider or "anthropic"
 
