@@ -1,0 +1,7 @@
+Merchant Account,Psp Reference,Merchant Reference,Creation Date,TimeZone,Type,Modification Reference,Gross Currency,Gross Debit (GC),Gross Credit (GC),Net Currency,Net Debit (NC),Net Credit (NC),Batch Number,Additional Notes
+DemoMerchant,PSP0001,order1,2026-10-09 12:00:00,UTC,Settled,,EUR,,100,EUR,,97.50,42,Synthetic demonstration only
+DemoMerchant,PSP0002,order2,2026-10-09 12:00:00,UTC,Refunded,,EUR,20,,EUR,20.50,,42,Synthetic demonstration only
+DemoMerchant,,,2026-10-09 12:00:00,UTC,Fee,Monthly fee,EUR,,,EUR,1.00,,42,Synthetic demonstration only
+DemoMerchant,,,2026-10-09 12:00:00,UTC,InvoiceDeduction,Invoice 2026-42,EUR,,,EUR,5.00,,42,Synthetic demonstration only
+DemoMerchant,,,2026-10-09 12:00:00,UTC,ReserveAdjustment,Reserve release,EUR,,,EUR,,2.00,42,Synthetic demonstration only
+DemoMerchant,,,2026-10-09 12:00:00,UTC,MerchantPayout,TX0001XT batch 42,EUR,,,EUR,73.00,,42,Synthetic demonstration only

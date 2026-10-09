@@ -1,0 +1,8 @@
+tenant_id,merchant_id,batch_id,event_id,event_type,amount_eur,currency,effective_at,description
+tenant_demo,DemoMerchant,batch_42,adyen_r000001_capture,Capture,100.00,EUR,2026-10-09T12:00:00+00:00,Adyen Settled capture; source record 1
+tenant_demo,DemoMerchant,batch_42,adyen_r000001_embedded_fee,Fee,-2.50,EUR,2026-10-09T12:00:00+00:00,Adyen Settled embedded_fee; source record 1
+tenant_demo,DemoMerchant,batch_42,adyen_r000002_refund,Refund,-20.00,EUR,2026-10-09T12:00:00+00:00,Adyen Refunded refund; source record 2
+tenant_demo,DemoMerchant,batch_42,adyen_r000002_embedded_fee,Fee,-0.50,EUR,2026-10-09T12:00:00+00:00,Adyen Refunded embedded_fee; source record 2
+tenant_demo,DemoMerchant,batch_42,adyen_r000003_fee,Fee,-1.00,EUR,2026-10-09T12:00:00+00:00,Adyen Fee fee; source record 3
+tenant_demo,DemoMerchant,batch_42,adyen_r000004_invoicededuction,InvoiceDeduction,-5.00,EUR,2026-10-09T12:00:00+00:00,Adyen InvoiceDeduction invoicededuction; source record 4
+tenant_demo,DemoMerchant,batch_42,adyen_r000005_reserveadjustment,ReserveAdjustment,2.00,EUR,2026-10-09T12:00:00+00:00,Adyen ReserveAdjustment reserveadjustment; source record 5
