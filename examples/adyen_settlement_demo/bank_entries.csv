@@ -1,0 +1,2 @@
+tenant_id,merchant_id,batch_id,event_id,event_type,amount_eur,currency,effective_at,description
+tenant_demo,DemoMerchant,batch_42,bank_payout_42,Payout,72.00,EUR,2026-10-09T12:00:00+00:00,Synthetic bank payout; EUR 1.00 shortfall
