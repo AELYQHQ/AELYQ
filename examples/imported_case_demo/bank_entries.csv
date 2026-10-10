@@ -1,0 +1,2 @@
+tenant_id,merchant_id,batch_id,event_id,event_type,amount_eur,currency,effective_at,description
+tenant_demo,merchant_demo,batch_import_demo,evt_payout_001,Payout,85.00,EUR,2026-10-10T10:00:00+00:00,Example bank payout

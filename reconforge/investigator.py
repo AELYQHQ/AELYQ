@@ -780,12 +780,16 @@ async def investigate(
 async def run_mcp_investigation(
     case_id: str,
     model: DecisionModel | None = None,
+    *,
+    server_module: str = "reconforge.mcp_server",
 ) -> InvestigationRun:
+    if server_module not in ("reconforge.mcp_server", "reconforge.imported_mcp_server"):
+        raise InvestigationError("Unsupported read-only MCP server module.")
     process = StdioServerParameters(
         command=sys.executable,
         args=[
             "-m",
-            "reconforge.mcp_server",
+            server_module,
         ],
         cwd=str(
             Path(__file__).resolve().parents[1]
